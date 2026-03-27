@@ -256,7 +256,7 @@ pytest tests/ -v
 
 ## Documentation
 
-- **TRADING_PLAYBOOK.md**: Complete trading system documentation
+- **docs/STRATEGIES.md**: Strategy development guide
 - **Core types**: Inline docstrings with examples
 - **Strategies**: Protocol documentation with usage examples
 - **Adapters**: API integration guides

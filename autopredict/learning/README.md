@@ -64,7 +64,7 @@ python scripts/learn_and_improve.py improve \
 
 ## Documentation
 
-See [SELF_IMPROVEMENT.md](/SELF_IMPROVEMENT.md) for complete documentation.
+See [../../docs/LEARNING.md](../../docs/LEARNING.md) for the full learning guide.
 
 ## Example
 

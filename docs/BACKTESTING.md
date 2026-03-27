@@ -130,8 +130,7 @@ Backtests output JSON with all metrics:
   "adverse_selection_rate": 0.18,
   "calibration_by_bucket": {...},
   "agent_feedback": {
-    "dominant_weakness": "execution_quality",
-    "weakness_score": 0.65,
+    "weakness": "execution_quality",
     "hypothesis": "Slippage is high - consider more limit orders"
   }
 }
@@ -252,8 +251,7 @@ The `agent_feedback` field identifies the dominant weakness:
 
 ```json
 {
-  "dominant_weakness": "execution_quality",
-  "weakness_score": 0.65,
+  "weakness": "execution_quality",
   "hypothesis": "Slippage is high - consider more limit orders"
 }
 ```

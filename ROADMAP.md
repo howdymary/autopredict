@@ -23,7 +23,7 @@ Completed:
 - ✅ Configurable agent strategies
 - ✅ Backtest harness
 - ✅ Self-diagnosis and improvement suggestions
-- ✅ Testing infrastructure (65 tests, 80%+ coverage)
+- ✅ Comprehensive automated test suite
 - ✅ Extensive documentation
 
 Current capabilities:

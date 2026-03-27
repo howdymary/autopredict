@@ -68,8 +68,7 @@ class AutoPredictAgent:
         hypothesis = self._generate_hypothesis(weakness_type, metrics)
 
         return {
-            "dominant_weakness": weakness_type,
-            "weakness_score": weakness_score,
+            "weakness": weakness_type,
             "hypothesis": hypothesis
         }
 ```
@@ -100,8 +99,7 @@ python -m autopredict.cli backtest
   "avg_slippage_bps": 85.3,
   "fill_rate": 0.42,
   "agent_feedback": {
-    "dominant_weakness": "execution_quality",
-    "weakness_score": 0.72,
+    "weakness": "execution_quality",
     "hypothesis": "High slippage - consider using more limit orders"
   }
 }
@@ -131,8 +129,7 @@ python -m autopredict.cli backtest --config strategy_configs/improved_execution.
   "avg_slippage_bps": 42.1,  // Improved from 85.3
   "fill_rate": 0.58,  // Improved from 0.42
   "agent_feedback": {
-    "dominant_weakness": "calibration",  // New weakness revealed
-    "weakness_score": 0.48,
+    "weakness": "calibration",  // New weakness revealed
     "hypothesis": "Brier score mediocre - improve probability estimates"
   }
 }

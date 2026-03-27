@@ -40,7 +40,7 @@ If you experience or witness unacceptable behavior, please report it to the main
 1. **Fork and clone the repository**
 
 ```bash
-git clone https://github.com/yourusername/autopredict.git
+git clone https://github.com/howdymary/autopredict.git
 cd autopredict
 ```
 

@@ -11,13 +11,13 @@ Common issues and solutions.
 **Solution**:
 ```bash
 # Make sure you're in the right directory
-cd /Users/howdymary/Documents/New\ project/autopredict
+cd /path/to/autopredict
 
 # Run with module syntax
 python -m autopredict.cli backtest
 
 # Or add to PYTHONPATH
-export PYTHONPATH="/Users/howdymary/Documents/New project/autopredict:$PYTHONPATH"
+export PYTHONPATH="/path/to/autopredict:$PYTHONPATH"
 python -c "import autopredict"
 ```
 
@@ -171,7 +171,7 @@ Increase aggressive_edge to use limit orders more:
 }
 ```
 
-Or check your fair_prob estimates - if they're consistently > 15% away from market_prob, you might be overconfident. See CALIBRATION_SUMMARY.md.
+Or check your fair_prob estimates. If they're consistently more than 15% away from market_prob, you may be overconfident. Review [fair_prob_guidelines.md](fair_prob_guidelines.md).
 
 ## Metric Anomalies
 
@@ -242,7 +242,7 @@ Collect more trades (100+) before worrying.
 
 **Solution**:
 
-With only 6 markets, calibration analysis is not reliable. See CALIBRATION_SUMMARY.md for guidance on how to get to 100+ markets.
+With only 6 markets, calibration analysis is not reliable. Add a larger dataset before drawing conclusions about forecast quality.
 
 ## Logic Issues
 
@@ -468,9 +468,9 @@ Before deploying an agent:
 ### Read the docs
 
 - **ARCHITECTURE.md**: Understand component design
-- **WORKFLOW.md**: Follow the decision loop step-by-step
+- **LEARNING.md**: Understand the improvement loop
 - **METRICS.md**: Understand each metric deeply
-- **CALIBRATION_SUMMARY.md**: Fix forecast quality issues
+- **fair_prob_guidelines.md**: Improve forecast quality
 
 ### Enable debug mode
 
@@ -533,7 +533,7 @@ Most issues fall into these categories:
 | No trades | Gating rules too strict | Lower min_edge, min_liquidity |
 | Low fill rate | Limit prices not competitive | Use more market orders |
 | High slippage | Market orders on thin books | Use more limit orders |
-| Poor Brier | Forecasts overconfident | Read CALIBRATION_SUMMARY.md |
+| Poor Brier | Forecasts overconfident | Review fair_prob_guidelines.md |
 | High drawdown | Position sizing too large | Lower max_risk_fraction |
 | All metrics 0 | No trades executed | See "No trades" row above |
 

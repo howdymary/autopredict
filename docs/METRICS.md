@@ -56,7 +56,7 @@ Brier = 0.26
 - You're 19% better than market
 
 **How to Improve**:
-- Read CALIBRATION_SUMMARY.md - sports (0.462) and macro (0.292) categories are weak
+- Review [fair_prob_guidelines.md](fair_prob_guidelines.md) before trusting large edges
 - Don't trust extreme probabilities (0.05, 0.95) - they're usually overconfident
 - Use base rates - don't just react to news
 - Get feedback on your forecasts (what actually happens?) and adjust methodology
@@ -581,7 +581,7 @@ So: implementation_shortfall ≈ slippage_bps
 
 **Diagnose** (from TROUBLESHOOTING.md):
 1. Core issue: **Forecasts are bad** (Brier 0.38 >> market 0.315)
-   - Read CALIBRATION_SUMMARY.md
+   - Review `fair_prob_guidelines.md`
    - Fix fair_prob estimation methodology
 
 2. Secondary issue: **Execution is terrible** (slippage 45 bps)
@@ -622,7 +622,7 @@ def score_report(metrics):
 
 ## Summary
 
-- **Epistemic**: Brier score (forecast accuracy) - read CALIBRATION_SUMMARY.md to improve
+- **Epistemic**: Brier score (forecast accuracy) - review `fair_prob_guidelines.md` to improve
 - **Financial**: Sharpe, max_drawdown, PnL, win_rate - indicates profitability and risk
 - **Execution**: Slippage, fill_rate, market_impact - indicates order type and sizing quality
 

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "autopredict"
-version = "1.0.0"
+version = "0.1.0"
 description = "A minimal framework for self-improving prediction market agents"
 readme = "README.md"
 requires-python = ">=3.9"
@@ -38,15 +38,27 @@ dev = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/yourusername/autopredict"
-Documentation = "https://github.com/yourusername/autopredict/blob/main/README.md"
-Repository = "https://github.com/yourusername/autopredict"
+Homepage = "https://github.com/howdymary/autopredict"
+Documentation = "https://github.com/howdymary/autopredict/blob/main/README.md"
+Repository = "https://github.com/howdymary/autopredict"
 
-# [project.scripts]
-# autopredict = "autopredict.cli:main"  # TODO: Implement CLI
+[project.scripts]
+autopredict = "autopredict.cli:main"
 
 [tool.setuptools]
-packages = ["autopredict", "autopredict.core", "autopredict.strategies", "autopredict.markets"]
+py-modules = ["agent", "market_env", "run_experiment", "run_experiment_with_validation"]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["autopredict*", "validation*"]
+
+[tool.setuptools.package-data]
+autopredict = [
+    "_defaults/*.json",
+    "_defaults/*.md",
+    "_defaults/datasets/*.json",
+    "_defaults/strategy_configs/*.json",
+]
 
 [tool.black]
 line-length = 100

@@ -1,0 +1,1 @@
+"""AutoPredict test suite."""

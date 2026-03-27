@@ -154,6 +154,10 @@ class PolymarketAdapter:
         # Placeholder
         raise NotImplementedError("Order placement not yet implemented")
 
+    def submit_order(self, order: Order) -> ExecutionReport:
+        """Compatibility alias for live-trading adapters."""
+        return self.place_order(order)
+
     def cancel_order(self, market_id: str, order_id: str) -> bool:
         """Cancel outstanding order.
 
@@ -273,7 +277,7 @@ class PolymarketAdapter:
         return ExecutionReport(
             order=order,
             filled_size=0.0,
-            avg_fill_price=0.0,
+            avg_fill_price=None,
             fills=[],
             slippage_bps=0.0,
             fee_total=0.0,

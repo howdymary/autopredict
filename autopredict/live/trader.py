@@ -6,100 +6,15 @@ Live trading requires explicit confirmation and uses real APIs.
 
 from __future__ import annotations
 
+from dataclasses import replace
 import random
 import sys
 import time
-from dataclasses import dataclass, field
 from datetime import datetime
 from typing import Any, Protocol
 import warnings
 
-
-@dataclass
-class Order:
-    """Trading order specification.
-
-    Attributes:
-        market_id: Market identifier
-        side: "buy" or "sell"
-        order_type: "market" or "limit"
-        size: Position size in currency units
-        limit_price: Price for limit orders (None for market orders)
-        timestamp: Order creation timestamp
-        metadata: Additional order metadata
-    """
-
-    market_id: str
-    side: str
-    order_type: str
-    size: float
-    limit_price: float | None = None
-    timestamp: datetime = field(default_factory=datetime.now)
-    metadata: dict[str, Any] = field(default_factory=dict)
-
-    def validate(self) -> None:
-        """Validate order parameters.
-
-        Raises:
-            ValueError: If order parameters are invalid
-        """
-        if not self.market_id:
-            raise ValueError("market_id cannot be empty")
-        if self.side not in ("buy", "sell"):
-            raise ValueError(f"side must be 'buy' or 'sell', got '{self.side}'")
-        if self.order_type not in ("market", "limit"):
-            raise ValueError(f"order_type must be 'market' or 'limit', got '{self.order_type}'")
-        if self.size <= 0:
-            raise ValueError(f"size must be positive, got {self.size}")
-        if self.order_type == "limit" and self.limit_price is None:
-            raise ValueError("limit_price required for limit orders")
-        if self.limit_price is not None and not 0 < self.limit_price < 1:
-            raise ValueError(f"limit_price must be in (0, 1) for binary markets, got {self.limit_price}")
-
-
-@dataclass
-class ExecutionReport:
-    """Report of order execution.
-
-    Attributes:
-        order: Original order
-        filled: Whether order was filled
-        fill_price: Actual execution price (None if not filled)
-        fill_size: Actual filled size
-        fill_timestamp: When order was filled
-        commission: Trading commission paid
-        slippage_bps: Slippage in basis points (positive = worse than expected)
-        execution_mode: "paper" or "live"
-        error_message: Error message if execution failed
-        metadata: Additional execution metadata
-    """
-
-    order: Order
-    filled: bool
-    fill_price: float | None = None
-    fill_size: float = 0.0
-    fill_timestamp: datetime | None = None
-    commission: float = 0.0
-    slippage_bps: float = 0.0
-    execution_mode: str = "paper"
-    error_message: str | None = None
-    metadata: dict[str, Any] = field(default_factory=dict)
-
-    def is_success(self) -> bool:
-        """Check if execution was successful."""
-        return self.filled and self.error_message is None
-
-    def get_net_proceeds(self) -> float:
-        """Calculate net proceeds after commission.
-
-        Returns:
-            Net value of filled position
-        """
-        if not self.filled or self.fill_price is None:
-            return 0.0
-        gross = self.fill_size * self.fill_price
-        return gross - self.commission
-
+from autopredict.core.types import ExecutionReport, Order
 
 class VenueAdapter(Protocol):
     """Protocol for venue API adapters.
@@ -211,11 +126,10 @@ class PaperTrader:
 
         report = ExecutionReport(
             order=order,
-            filled=True,
-            fill_price=fill_price,
-            fill_size=order.size,
-            fill_timestamp=datetime.now(),
-            commission=commission,
+            filled_size=order.size,
+            avg_fill_price=fill_price,
+            timestamp=datetime.now(),
+            fee_total=commission,
             slippage_bps=self.slippage_bps,
             execution_mode="paper",
         )
@@ -240,7 +154,8 @@ class PaperTrader:
         if not filled:
             return ExecutionReport(
                 order=order,
-                filled=False,
+                filled_size=0.0,
+                avg_fill_price=None,
                 execution_mode="paper",
                 metadata={"reason": "limit_not_filled"},
             )
@@ -255,11 +170,10 @@ class PaperTrader:
 
         report = ExecutionReport(
             order=order,
-            filled=True,
-            fill_price=fill_price,
-            fill_size=order.size,
-            fill_timestamp=datetime.now(),
-            commission=commission,
+            filled_size=order.size,
+            avg_fill_price=fill_price,
+            timestamp=datetime.now(),
+            fee_total=commission,
             slippage_bps=0.0,  # No slippage on limit orders
             execution_mode="paper",
         )
@@ -277,7 +191,7 @@ class PaperTrader:
 
     def get_total_commission_paid(self) -> float:
         """Calculate total commission paid across all trades."""
-        return sum(trade.commission for trade in self.trade_history)
+        return sum(trade.fee_total for trade in self.trade_history)
 
 
 class LiveTrader:
@@ -288,9 +202,9 @@ class LiveTrader:
 
     CRITICAL SAFETY FEATURES:
     - Requires explicit live mode confirmation
-    - Validates API credentials
-    - Enforces risk checks before every trade
-    - Logs all activity to production journal
+    - Validates adapter credentials when the adapter exposes a preflight hook
+    - Verifies the adapter exposes a supported order-submission entrypoint
+    - Logs all activity to the trade history
     - Cannot be instantiated without user confirmation
 
     Example:
@@ -315,7 +229,7 @@ class LiveTrader:
             require_confirmation: Whether to require user confirmation (should always be True)
 
         Raises:
-            RuntimeError: If live mode confirmation fails
+            RuntimeError: If live mode confirmation or adapter preflight fails
         """
         if not safety_checks:
             warnings.warn(
@@ -326,6 +240,14 @@ class LiveTrader:
 
         if require_confirmation and not self._confirm_live_mode():
             raise RuntimeError("Live mode not confirmed - trader not initialized")
+
+        if not hasattr(venue_adapter, "submit_order") and not hasattr(venue_adapter, "place_order"):
+            raise TypeError("venue_adapter must implement submit_order(order) or place_order(order)")
+
+        if safety_checks and hasattr(venue_adapter, "validate_credentials"):
+            credentials_ok = venue_adapter.validate_credentials()
+            if not credentials_ok:
+                raise RuntimeError("Venue adapter credential validation failed")
 
         self.venue_adapter = venue_adapter
         self.safety_checks = safety_checks
@@ -383,8 +305,9 @@ class LiveTrader:
 
         try:
             # Submit to real venue
-            report = self.venue_adapter.submit_order(order)
-            report.execution_mode = "live"
+            report = self._submit_order(order)
+            if report.execution_mode != "live":
+                report = replace(report, execution_mode="live")
 
             # Log result
             if report.is_success():
@@ -399,7 +322,8 @@ class LiveTrader:
             # Create error report
             error_report = ExecutionReport(
                 order=order,
-                filled=False,
+                filled_size=0.0,
+                avg_fill_price=None,
                 execution_mode="live",
                 error_message=str(e),
             )
@@ -407,6 +331,14 @@ class LiveTrader:
 
             print(f"[LIVE] Order EXCEPTION: {e}")
             raise
+
+    def _submit_order(self, order: Order) -> ExecutionReport:
+        """Submit an order via either live-trader or market-adapter naming."""
+        if hasattr(self.venue_adapter, "submit_order"):
+            return self.venue_adapter.submit_order(order)
+        if hasattr(self.venue_adapter, "place_order"):
+            return self.venue_adapter.place_order(order)
+        raise TypeError("venue_adapter does not expose submit_order(order) or place_order(order)")
 
     def kill_switch(self, reason: str = "Manual kill switch activated") -> None:
         """Immediately halt all trading activity.

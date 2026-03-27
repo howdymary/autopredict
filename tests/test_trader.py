@@ -2,7 +2,8 @@
 
 import pytest
 
-from autopredict.live.trader import Order, PaperTrader, ExecutionReport
+from autopredict.core.types import ExecutionReport as CoreExecutionReport
+from autopredict.live.trader import ExecutionReport, LiveTrader, Order, PaperTrader
 
 
 class TestOrder:
@@ -31,60 +32,55 @@ class TestOrder:
 
     def test_invalid_side(self):
         """Test that invalid side raises error."""
-        order = Order(
-            market_id="test",
-            side="invalid",
-            order_type="market",
-            size=100.0,
-        )
-        with pytest.raises(ValueError, match="side must be"):
-            order.validate()
+        with pytest.raises(ValueError, match="not a valid OrderSide"):
+            Order(
+                market_id="test",
+                side="invalid",
+                order_type="market",
+                size=100.0,
+            )
 
     def test_invalid_order_type(self):
         """Test that invalid order type raises error."""
-        order = Order(
-            market_id="test",
-            side="buy",
-            order_type="invalid",
-            size=100.0,
-        )
-        with pytest.raises(ValueError, match="order_type must be"):
-            order.validate()
+        with pytest.raises(ValueError, match="not a valid OrderType"):
+            Order(
+                market_id="test",
+                side="buy",
+                order_type="invalid",
+                size=100.0,
+            )
 
     def test_negative_size(self):
         """Test that negative size raises error."""
-        order = Order(
-            market_id="test",
-            side="buy",
-            order_type="market",
-            size=-10.0,
-        )
         with pytest.raises(ValueError, match="size must be positive"):
-            order.validate()
+            Order(
+                market_id="test",
+                side="buy",
+                order_type="market",
+                size=-10.0,
+            )
 
     def test_limit_order_requires_price(self):
         """Test that limit orders require limit_price."""
-        order = Order(
-            market_id="test",
-            side="buy",
-            order_type="limit",
-            size=100.0,
-            limit_price=None,
-        )
         with pytest.raises(ValueError, match="limit_price required"):
-            order.validate()
+            Order(
+                market_id="test",
+                side="buy",
+                order_type="limit",
+                size=100.0,
+                limit_price=None,
+            )
 
     def test_invalid_limit_price(self):
         """Test that limit price must be in (0, 1) for binary markets."""
-        order = Order(
-            market_id="test",
-            side="buy",
-            order_type="limit",
-            size=100.0,
-            limit_price=1.5,
-        )
         with pytest.raises(ValueError, match="limit_price must be in"):
-            order.validate()
+            Order(
+                market_id="test",
+                side="buy",
+                order_type="limit",
+                size=100.0,
+                limit_price=1.5,
+            )
 
 
 class TestPaperTrader:
@@ -276,19 +272,23 @@ class TestExecutionReport:
         # Successful fill
         report1 = ExecutionReport(
             order=order,
-            filled=True,
-            fill_price=0.50,
+            filled_size=100.0,
+            avg_fill_price=0.50,
             error_message=None,
         )
         assert report1.is_success()
+        assert report1.filled
+        assert report1.fill_price == 0.50
 
         # Failed fill
         report2 = ExecutionReport(
             order=order,
-            filled=False,
+            filled_size=0.0,
+            avg_fill_price=None,
             error_message="Insufficient liquidity",
         )
         assert not report2.is_success()
+        assert not report2.filled
 
     def test_net_proceeds(self):
         """Test net proceeds calculation."""
@@ -301,10 +301,9 @@ class TestExecutionReport:
 
         report = ExecutionReport(
             order=order,
-            filled=True,
-            fill_price=0.50,
-            fill_size=100.0,
-            commission=1.0,
+            filled_size=100.0,
+            avg_fill_price=0.50,
+            fee_total=1.0,
         )
 
         # Gross = 100 * 0.50 = 50.0
@@ -322,7 +321,77 @@ class TestExecutionReport:
 
         report = ExecutionReport(
             order=order,
-            filled=False,
+            filled_size=0.0,
+            avg_fill_price=None,
         )
 
         assert report.get_net_proceeds() == 0.0
+
+
+class _PlaceOnlyAdapter:
+    """Minimal adapter exposing only the market-adapter method name."""
+
+    def __init__(self):
+        self.orders = []
+
+    def place_order(self, order: Order) -> ExecutionReport:
+        self.orders.append(order)
+        return ExecutionReport(
+            order=order,
+            filled_size=order.size,
+            avg_fill_price=order.limit_price or 0.50,
+            execution_mode="paper",
+        )
+
+
+class _InvalidAdapter:
+    """Adapter missing both submit_order and place_order."""
+
+    pass
+
+
+class _CredentialCheckingAdapter(_PlaceOnlyAdapter):
+    def __init__(self, credentials_ok: bool):
+        super().__init__()
+        self.credentials_ok = credentials_ok
+
+    def validate_credentials(self) -> bool:
+        return self.credentials_ok
+
+
+class TestLiveTrader:
+    """Tests for live trading boundary behavior."""
+
+    def test_live_trader_accepts_market_adapter_place_order(self):
+        adapter = _PlaceOnlyAdapter()
+        trader = LiveTrader(adapter, safety_checks=True, require_confirmation=False)
+
+        order = Order(
+            market_id="test",
+            side="buy",
+            order_type="limit",
+            size=10.0,
+            limit_price=0.55,
+        )
+        report = trader.place_order(order)
+
+        assert report.execution_mode == "live"
+        assert report.filled
+        assert adapter.orders == [order]
+        assert trader.get_trade_history()[-1] == report
+
+    def test_live_trader_rejects_missing_adapter_entrypoint(self):
+        with pytest.raises(TypeError, match="must implement submit_order\\(order\\) or place_order\\(order\\)"):
+            LiveTrader(_InvalidAdapter(), safety_checks=True, require_confirmation=False)
+
+    def test_live_trader_checks_credentials_when_available(self):
+        with pytest.raises(RuntimeError, match="credential validation failed"):
+            LiveTrader(
+                _CredentialCheckingAdapter(credentials_ok=False),
+                safety_checks=True,
+                require_confirmation=False,
+            )
+
+    def test_live_exports_core_execution_report(self):
+        """Live trader should reuse the package-wide execution report type."""
+        assert ExecutionReport is CoreExecutionReport

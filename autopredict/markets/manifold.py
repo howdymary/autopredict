@@ -162,6 +162,10 @@ class ManifoldAdapter:
 
         raise NotImplementedError("Bet placement not yet implemented")
 
+    def submit_order(self, order: Order) -> ExecutionReport:
+        """Compatibility alias for live-trading adapters."""
+        return self.place_order(order)
+
     def cancel_order(self, market_id: str, order_id: str) -> bool:
         """Cancel outstanding bet.
 

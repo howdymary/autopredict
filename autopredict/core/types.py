@@ -251,6 +251,9 @@ class Order:
 
     def __post_init__(self) -> None:
         """Validate order invariants."""
+        object.__setattr__(self, "side", OrderSide(self.side))
+        object.__setattr__(self, "order_type", OrderType(self.order_type))
+
         if self.size <= 0:
             raise ValueError(f"size must be positive, got {self.size}")
 
@@ -262,6 +265,10 @@ class Order:
 
         if self.order_type == OrderType.MARKET and self.limit_price is not None:
             raise ValueError("limit_price should be None for market orders")
+
+    def validate(self) -> None:
+        """Retain compatibility with legacy call sites expecting explicit validation."""
+        return None
 
 
 @dataclass(frozen=True)
@@ -294,12 +301,14 @@ class ExecutionReport:
     """
 
     order: Order
-    filled_size: float
-    avg_fill_price: float
+    filled_size: float = 0.0
+    avg_fill_price: float | None = None
     fills: list[tuple[float, float]] = field(default_factory=list)
     slippage_bps: float = 0.0
     fee_total: float = 0.0
     timestamp: datetime = field(default_factory=datetime.now)
+    execution_mode: str = "paper"
+    error_message: str | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
     @property
@@ -312,12 +321,47 @@ class ExecutionReport:
     @property
     def notional(self) -> float:
         """Total notional value of execution."""
+        if self.avg_fill_price is None:
+            return 0.0
         return self.filled_size * self.avg_fill_price
 
     @property
     def total_cost(self) -> float:
         """Total cost including fees."""
         return self.notional + self.fee_total
+
+    @property
+    def filled(self) -> bool:
+        """Compatibility alias for legacy live-trading code."""
+        return self.filled_size > 0.0 and self.avg_fill_price is not None
+
+    @property
+    def fill_price(self) -> float | None:
+        """Compatibility alias for legacy live-trading code."""
+        return self.avg_fill_price
+
+    @property
+    def fill_size(self) -> float:
+        """Compatibility alias for legacy live-trading code."""
+        return self.filled_size
+
+    @property
+    def fill_timestamp(self) -> datetime:
+        """Compatibility alias for legacy live-trading code."""
+        return self.timestamp
+
+    @property
+    def commission(self) -> float:
+        """Compatibility alias for legacy live-trading code."""
+        return self.fee_total
+
+    def is_success(self) -> bool:
+        """Check if execution was successful."""
+        return self.filled and self.error_message is None
+
+    def get_net_proceeds(self) -> float:
+        """Calculate net proceeds after fees."""
+        return self.notional - self.fee_total
 
     @property
     def is_complete(self) -> bool:

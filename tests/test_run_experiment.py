@@ -90,3 +90,56 @@ def test_run_backtest_rejects_invalid_outcome(tmp_path):
             dataset_path=dataset_path,
             strategy_guidance_path=strategy_path,
         )
+
+
+def test_run_backtest_marks_external_forecast_source(tmp_path):
+    config_path = tmp_path / "config.json"
+    dataset_path = tmp_path / "dataset.json"
+    strategy_path = tmp_path / "strategy.md"
+
+    config_path.write_text(
+        json.dumps(
+            {
+                "min_edge": 0.05,
+                "aggressive_edge": 0.12,
+                "max_risk_fraction": 0.02,
+                "max_position_notional": 25.0,
+                "min_book_liquidity": 60.0,
+                "max_spread_pct": 0.04,
+                "max_depth_fraction": 0.15,
+                "split_threshold_fraction": 0.25,
+                "passive_requote_fraction": 0.25,
+            }
+        ),
+        encoding="utf-8",
+    )
+    dataset_path.write_text(
+        json.dumps(
+            [
+                {
+                    "market_id": "m1",
+                    "market_prob": 0.50,
+                    "fair_prob": 0.55,
+                    "outcome": 0,
+                    "time_to_expiry_hours": 24.0,
+                    "next_mid_price": 0.50,
+                    "order_book": {
+                        "bids": [[0.499, 100.0]],
+                        "asks": [[0.501, 100.0]],
+                    },
+                }
+            ]
+        ),
+        encoding="utf-8",
+    )
+    strategy_path.write_text("test guidance", encoding="utf-8")
+
+    metrics = run_backtest(
+        config_path=config_path,
+        dataset_path=dataset_path,
+        strategy_guidance_path=strategy_path,
+    )
+
+    assert metrics["forecast_source"] == "dataset_fair_prob"
+    assert metrics["forecast_scope"] == "input_forecast_quality"
+    assert metrics["agent_feedback"]["weakness"] == "forecast_input_quality"

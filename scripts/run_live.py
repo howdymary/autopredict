@@ -34,25 +34,29 @@ from autopredict.live import Monitor, RiskManager
 from autopredict.live.monitor import PerformanceSnapshot
 
 
-class MockVenueAdapter:
-    """Mock venue adapter for demonstration.
+def _create_venue_adapter(config):
+    """Resolve a real venue adapter or fail fast.
 
-    In production, replace this with real venue-specific adapter
-    (e.g., PolymarketAdapter, ManifoldAdapter, etc.)
+    The current repo contains venue scaffolding, but no production-ready live
+    adapters. Refusing to start is safer than silently running an inert session.
     """
+    venue_name = str(config.venue.name).lower()
 
-    def submit_order(self, order):
-        raise NotImplementedError(
-            "Live trading requires a real venue adapter. "
-            "Implement a venue-specific adapter (e.g., PolymarketAdapter) "
-            "that connects to the actual API."
+    if venue_name == "polymarket":
+        raise SystemExit(
+            "Live trading for Polymarket is not implemented in this repository yet. "
+            "The current adapter is a scaffold and cannot safely submit real orders."
+        )
+    if venue_name == "manifold":
+        raise SystemExit(
+            "Live trading for Manifold is not implemented in this repository yet. "
+            "The current adapter is a scaffold and cannot safely submit real orders."
         )
 
-    def get_order_book(self, market_id):
-        raise NotImplementedError("Implement venue adapter")
-
-    def get_position(self, market_id):
-        raise NotImplementedError("Implement venue adapter")
+    raise SystemExit(
+        f"Live trading for venue '{config.venue.name}' is not available. "
+        "Use paper mode or implement a real adapter first."
+    )
 
 
 def confirm_live_trading(config) -> bool:
@@ -212,10 +216,7 @@ def main():
     # Create components
     monitor = Monitor(config.logging)
 
-    # NOTE: In production, replace MockVenueAdapter with real adapter
-    # Example: from autopredict.venues import PolymarketAdapter
-    #          venue_adapter = PolymarketAdapter(config.venue)
-    venue_adapter = MockVenueAdapter()
+    venue_adapter = _create_venue_adapter(config)
 
     risk_manager = RiskManager(config.risk)
 

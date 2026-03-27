@@ -35,9 +35,10 @@ Example output:
   "brier_score": 0.25475000000000003,
   "fill_rate": 0.4420699362191731,
   "num_trades": 4.0,
+  "forecast_source": "dataset_fair_prob",
   "agent_feedback": {
-    "weakness": "calibration",
-    "hypothesis": "Forecasts are too confident relative to realized outcomes."
+    "weakness": "forecast_input_quality",
+    "hypothesis": "The supplied fair_prob inputs appear poorly calibrated; improve the upstream forecast source before blaming execution logic."
   }
 }
 ```
@@ -47,7 +48,7 @@ Example output:
 Use these as your first pass:
 
 - `sharpe`: unannualized per-trade return quality relative to volatility
-- `brier_score`: quality of forecast calibration
+- `brier_score`: quality of the supplied forecast calibration on the legacy dataset-driven loop
 - `avg_slippage_bps`: execution cost
 - `fill_rate`: how much of requested size actually filled
 - `agent_feedback`: the framework’s best guess at the next improvement target

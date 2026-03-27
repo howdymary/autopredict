@@ -179,5 +179,7 @@ def run_backtest(
     metrics = evaluate_all(forecasts, trades)
     metrics["starting_bankroll"] = starting_bankroll
     metrics["ending_bankroll"] = bankroll
+    metrics["forecast_source"] = "dataset_fair_prob"
+    metrics["forecast_scope"] = "input_forecast_quality"
     metrics["agent_feedback"] = agent.analyze_performance(metrics, guidance)
     return metrics

@@ -494,12 +494,18 @@ class AutoPredictAgent:
         fill_rate = float(metrics.get("fill_rate", 0.0) or 0.0)
         brier = float(metrics.get("brier_score", 0.0) or 0.0)
         max_drawdown = float(metrics.get("max_drawdown", 0.0) or 0.0)
+        forecast_source = str(metrics.get("forecast_source", "agent") or "agent")
 
         if avg_slippage > 15.0:
             return {"weakness": "execution_quality", "hypothesis": "Use passive orders more selectively and split size."}
         if fill_rate < 0.35:
             return {"weakness": "limit_fill_quality", "hypothesis": "Passive quoting is too timid or too small."}
         if brier > 0.20:
+            if forecast_source != "agent":
+                return {
+                    "weakness": "forecast_input_quality",
+                    "hypothesis": "The supplied fair_prob inputs appear poorly calibrated; improve the upstream forecast source before blaming execution logic.",
+                }
             return {"weakness": "calibration", "hypothesis": "Forecasts are too confident relative to realized outcomes."}
         if max_drawdown > 75.0:
             return {"weakness": "risk", "hypothesis": "Sizing is too large for edge quality and liquidity."}

@@ -1,6 +1,6 @@
 # AutoPredict
 
-AutoPredict is a framework for building and backtesting prediction market trading agents.
+AutoPredict is a framework for iteratively improving prediction market trading agents.
 
 It keeps the market simulator fixed, the trading logic mutable, and the iteration loop tight:
 

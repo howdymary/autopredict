@@ -1,0 +1,195 @@
+{
+  "name": "weather_domain_examples",
+  "version": "v1",
+  "domain": "weather",
+  "examples": [
+    {
+      "split": "train",
+      "question": "Will a gulf storm make landfall this week?",
+      "outcome": 1,
+      "features": {
+        "market_prob": 0.42,
+        "max_landfall_probability": 0.55,
+        "max_observed_wind_mph": 65.0,
+        "max_precip_probability": 0.22,
+        "num_forecasts": 2
+      },
+      "labels": {
+        "domain": "weather",
+        "market_family": "storm",
+        "regime": "warning",
+        "feature_version": "weather.phase1"
+      }
+    },
+    {
+      "split": "train",
+      "question": "Will the storm stay offshore this week?",
+      "outcome": 0,
+      "features": {
+        "market_prob": 0.46,
+        "max_landfall_probability": 0.55,
+        "max_observed_wind_mph": 65.0,
+        "max_precip_probability": 0.22,
+        "num_forecasts": 2
+      },
+      "labels": {
+        "domain": "weather",
+        "market_family": "storm",
+        "regime": "warning",
+        "feature_version": "weather.phase1"
+      }
+    },
+    {
+      "split": "train",
+      "question": "Will chicago temperature exceed 95f tomorrow?",
+      "outcome": 1,
+      "features": {
+        "market_prob": 0.44,
+        "max_temperature_f": 97.0,
+        "max_observed_temperature_f": 89.0,
+        "num_forecasts": 2
+      },
+      "labels": {
+        "domain": "weather",
+        "market_family": "temperature",
+        "regime": "watch",
+        "feature_version": "weather.phase1"
+      }
+    },
+    {
+      "split": "train",
+      "question": "Will chicago stay below 90f tomorrow?",
+      "outcome": 0,
+      "features": {
+        "market_prob": 0.50,
+        "max_temperature_f": 97.0,
+        "max_observed_temperature_f": 89.0,
+        "num_forecasts": 2
+      },
+      "labels": {
+        "domain": "weather",
+        "market_family": "temperature",
+        "regime": "watch",
+        "feature_version": "weather.phase1"
+      }
+    },
+    {
+      "split": "train",
+      "question": "Will rainfall exceed one inch in chicago?",
+      "outcome": 0,
+      "features": {
+        "market_prob": 0.35,
+        "max_precip_probability": 0.10,
+        "num_forecasts": 2
+      },
+      "labels": {
+        "domain": "weather",
+        "market_family": "precipitation",
+        "regime": "watch",
+        "feature_version": "weather.phase1"
+      }
+    },
+    {
+      "split": "train",
+      "question": "Will severe weather warning remain in place tomorrow?",
+      "outcome": 1,
+      "features": {
+        "market_prob": 0.52,
+        "max_landfall_probability": 0.35,
+        "max_observed_wind_mph": 58.0,
+        "num_forecasts": 2
+      },
+      "labels": {
+        "domain": "weather",
+        "market_family": "storm",
+        "regime": "warning",
+        "feature_version": "weather.phase1"
+      }
+    },
+    {
+      "split": "calibration",
+      "question": "Will hurricane warnings be upgraded tomorrow?",
+      "outcome": 1,
+      "features": {
+        "market_prob": 0.48,
+        "max_landfall_probability": 0.40,
+        "max_observed_wind_mph": 60.0,
+        "num_forecasts": 2
+      },
+      "labels": {
+        "domain": "weather",
+        "market_family": "storm",
+        "regime": "warning",
+        "feature_version": "weather.phase1"
+      }
+    },
+    {
+      "split": "calibration",
+      "question": "Will the storm weaken before landfall?",
+      "outcome": 0,
+      "features": {
+        "market_prob": 0.51,
+        "max_landfall_probability": 0.38,
+        "max_observed_wind_mph": 57.0,
+        "num_forecasts": 2
+      },
+      "labels": {
+        "domain": "weather",
+        "market_family": "storm",
+        "regime": "warning",
+        "feature_version": "weather.phase1"
+      }
+    },
+    {
+      "split": "calibration",
+      "question": "Will chicago exceed 100f this week?",
+      "outcome": 0,
+      "features": {
+        "market_prob": 0.56,
+        "max_temperature_f": 98.0,
+        "max_observed_temperature_f": 91.0,
+        "num_forecasts": 2
+      },
+      "labels": {
+        "domain": "weather",
+        "market_family": "temperature",
+        "regime": "watch",
+        "feature_version": "weather.phase1"
+      }
+    },
+    {
+      "split": "evaluation",
+      "question": "Will the gulf storm stay below category 1?",
+      "outcome": 0,
+      "features": {
+        "market_prob": 0.43,
+        "max_landfall_probability": 0.45,
+        "max_observed_wind_mph": 62.0,
+        "num_forecasts": 2
+      },
+      "labels": {
+        "domain": "weather",
+        "market_family": "storm",
+        "regime": "warning",
+        "feature_version": "weather.phase1"
+      }
+    },
+    {
+      "split": "evaluation",
+      "question": "Will chicago break 95f tomorrow afternoon?",
+      "outcome": 1,
+      "features": {
+        "market_prob": 0.49,
+        "max_temperature_f": 96.0,
+        "max_observed_temperature_f": 90.0,
+        "num_forecasts": 2
+      },
+      "labels": {
+        "domain": "weather",
+        "market_family": "temperature",
+        "regime": "watch",
+        "feature_version": "weather.phase1"
+      }
+    }
+  ]
+}

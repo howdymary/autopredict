@@ -1,0 +1,202 @@
+{
+  "name": "finance_domain_examples",
+  "version": "v1",
+  "domain": "finance",
+  "examples": [
+    {
+      "split": "train",
+      "question": "Will CPI print above expectations this month?",
+      "outcome": 1,
+      "features": {
+        "market_prob": 0.42,
+        "mean_percent_release_surprise": 0.25,
+        "mean_rate_cut_surprise_bps": -5.0,
+        "latest_crypto_price": 84500.0,
+        "latest_rates_value": 4.28,
+        "num_macro_events": 2
+      },
+      "labels": {
+        "domain": "finance",
+        "market_family": "macro",
+        "regime": "pre_release",
+        "feature_version": "finance.phase1"
+      }
+    },
+    {
+      "split": "train",
+      "question": "Will inflation cool below expectations this month?",
+      "outcome": 0,
+      "features": {
+        "market_prob": 0.48,
+        "mean_percent_release_surprise": 0.22,
+        "mean_rate_cut_surprise_bps": -5.0,
+        "latest_crypto_price": 84000.0,
+        "latest_rates_value": 4.28,
+        "num_macro_events": 2
+      },
+      "labels": {
+        "domain": "finance",
+        "market_family": "macro",
+        "regime": "pre_release",
+        "feature_version": "finance.phase1"
+      }
+    },
+    {
+      "split": "train",
+      "question": "Will the Fed cut rates at the March meeting?",
+      "outcome": 0,
+      "features": {
+        "market_prob": 0.55,
+        "mean_percent_release_surprise": 0.10,
+        "mean_rate_cut_surprise_bps": -25.0,
+        "latest_rates_value": 4.31,
+        "num_macro_events": 2
+      },
+      "labels": {
+        "domain": "finance",
+        "market_family": "rates",
+        "regime": "post_release",
+        "feature_version": "finance.phase1"
+      }
+    },
+    {
+      "split": "train",
+      "question": "Will the Fed hold rates at the March meeting?",
+      "outcome": 1,
+      "features": {
+        "market_prob": 0.45,
+        "mean_percent_release_surprise": 0.10,
+        "mean_rate_cut_surprise_bps": -25.0,
+        "latest_rates_value": 4.31,
+        "num_macro_events": 2
+      },
+      "labels": {
+        "domain": "finance",
+        "market_family": "rates",
+        "regime": "post_release",
+        "feature_version": "finance.phase1"
+      }
+    },
+    {
+      "split": "train",
+      "question": "Will bitcoin trade above 85000 by month end?",
+      "outcome": 1,
+      "features": {
+        "market_prob": 0.46,
+        "latest_crypto_price": 88000.0,
+        "latest_rates_value": 4.22,
+        "num_macro_events": 1
+      },
+      "labels": {
+        "domain": "finance",
+        "market_family": "crypto",
+        "regime": "steady",
+        "feature_version": "finance.phase1"
+      }
+    },
+    {
+      "split": "train",
+      "question": "Will bitcoin fall below 80000 by month end?",
+      "outcome": 0,
+      "features": {
+        "market_prob": 0.40,
+        "latest_crypto_price": 88000.0,
+        "latest_rates_value": 4.22,
+        "num_macro_events": 1
+      },
+      "labels": {
+        "domain": "finance",
+        "market_family": "crypto",
+        "regime": "steady",
+        "feature_version": "finance.phase1"
+      }
+    },
+    {
+      "split": "calibration",
+      "question": "Will CPI surprise on the upside this quarter?",
+      "outcome": 1,
+      "features": {
+        "market_prob": 0.47,
+        "mean_percent_release_surprise": 0.18,
+        "mean_rate_cut_surprise_bps": -8.0,
+        "latest_rates_value": 4.27,
+        "num_macro_events": 2
+      },
+      "labels": {
+        "domain": "finance",
+        "market_family": "macro",
+        "regime": "pre_release",
+        "feature_version": "finance.phase1"
+      }
+    },
+    {
+      "split": "calibration",
+      "question": "Will the Fed cut rates next meeting?",
+      "outcome": 0,
+      "features": {
+        "market_prob": 0.52,
+        "mean_rate_cut_surprise_bps": -20.0,
+        "latest_rates_value": 4.30,
+        "num_macro_events": 2
+      },
+      "labels": {
+        "domain": "finance",
+        "market_family": "rates",
+        "regime": "post_release",
+        "feature_version": "finance.phase1"
+      }
+    },
+    {
+      "split": "calibration",
+      "question": "Will bitcoin clear 90000 this month?",
+      "outcome": 0,
+      "features": {
+        "market_prob": 0.58,
+        "latest_crypto_price": 88500.0,
+        "latest_rates_value": 4.24,
+        "num_macro_events": 1
+      },
+      "labels": {
+        "domain": "finance",
+        "market_family": "crypto",
+        "regime": "steady",
+        "feature_version": "finance.phase1"
+      }
+    },
+    {
+      "split": "evaluation",
+      "question": "Will inflation stay above target next month?",
+      "outcome": 1,
+      "features": {
+        "market_prob": 0.51,
+        "mean_percent_release_surprise": 0.14,
+        "mean_rate_cut_surprise_bps": -10.0,
+        "latest_rates_value": 4.26,
+        "num_macro_events": 2
+      },
+      "labels": {
+        "domain": "finance",
+        "market_family": "macro",
+        "regime": "pre_release",
+        "feature_version": "finance.phase1"
+      }
+    },
+    {
+      "split": "evaluation",
+      "question": "Will bitcoin remain above 85000 next week?",
+      "outcome": 1,
+      "features": {
+        "market_prob": 0.53,
+        "latest_crypto_price": 87250.0,
+        "latest_rates_value": 4.23,
+        "num_macro_events": 1
+      },
+      "labels": {
+        "domain": "finance",
+        "market_family": "crypto",
+        "regime": "steady",
+        "feature_version": "finance.phase1"
+      }
+    }
+  ]
+}

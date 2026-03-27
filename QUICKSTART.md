@@ -10,7 +10,7 @@ cd autopredict
 python -m pip install -e .
 ```
 
-Editable install is recommended so package imports and CLI behavior match what you see in the repo.
+Editable install is recommended so package imports and CLI behavior match what you see in the repo. It also installs the small runtime dependency set, including `PyYAML` for config loading.
 
 ## 2. Run the baseline backtest
 
@@ -99,7 +99,10 @@ That is the core loop:
 
 ## Smoke checks
 
+Install the dev extras first if you want to run the repo test suite:
+
 ```bash
+python -m pip install -e ".[dev]"
 pytest -q
 python -m autopredict.cli backtest
 python -m autopredict.cli score-latest

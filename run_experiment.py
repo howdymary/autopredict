@@ -2,12 +2,26 @@
 
 from __future__ import annotations
 
+import argparse
 import json
 import math
 from pathlib import Path
+import sys
 
-from .agent import AutoPredictAgent, MarketState
-from .market_env import BookLevel, ExecutionEngine, ForecastRecord, OrderBook, TradeRecord, evaluate_all
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from autopredict.agent import AutoPredictAgent, MarketState
+    from autopredict.market_env import (
+        BookLevel,
+        ExecutionEngine,
+        ForecastRecord,
+        OrderBook,
+        TradeRecord,
+        evaluate_all,
+    )
+else:
+    from .agent import AutoPredictAgent, MarketState
+    from .market_env import BookLevel, ExecutionEngine, ForecastRecord, OrderBook, TradeRecord, evaluate_all
 
 
 def _load_json(path: str | Path) -> dict | list:
@@ -183,3 +197,27 @@ def run_backtest(
     metrics["forecast_scope"] = "input_forecast_quality"
     metrics["agent_feedback"] = agent.analyze_performance(metrics, guidance)
     return metrics
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Run the legacy AutoPredict backtest harness")
+    parser.add_argument("--config", required=True, help="Path to strategy config JSON")
+    parser.add_argument("--dataset", required=True, help="Path to dataset JSON")
+    parser.add_argument("--strategy-guidance", help="Optional path to strategy guidance markdown")
+    parser.add_argument("--starting-bankroll", type=float, default=1_000.0, help="Starting bankroll")
+    return parser
+
+
+def main() -> None:
+    args = _build_parser().parse_args()
+    metrics = run_backtest(
+        config_path=args.config,
+        dataset_path=args.dataset,
+        strategy_guidance_path=args.strategy_guidance,
+        starting_bankroll=args.starting_bankroll,
+    )
+    print(json.dumps(metrics, indent=2, sort_keys=True))
+
+
+if __name__ == "__main__":
+    main()

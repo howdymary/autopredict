@@ -21,6 +21,16 @@ def _run_cli(*args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
+def _run_legacy_script(*args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [sys.executable, str(ROOT / "run_experiment.py"), *args],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
 def test_module_backtest_outputs_metrics_json() -> None:
     completed = _run_cli("backtest")
     metrics = json.loads(completed.stdout)
@@ -37,3 +47,18 @@ def test_module_score_latest_reads_saved_metrics() -> None:
 
     assert "total_pnl" in metrics
     assert "sharpe" in metrics
+
+
+def test_legacy_run_experiment_script_executes_directly() -> None:
+    completed = _run_legacy_script(
+        "--config",
+        str(ROOT / "strategy_configs/baseline.json"),
+        "--dataset",
+        str(ROOT / "datasets/sample_markets.json"),
+        "--strategy-guidance",
+        str(ROOT / "strategy.md"),
+    )
+    metrics = json.loads(completed.stdout)
+
+    assert metrics["num_trades"] >= 1
+    assert metrics["forecast_source"] == "dataset_fair_prob"

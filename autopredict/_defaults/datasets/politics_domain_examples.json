@@ -1,0 +1,205 @@
+{
+  "name": "politics_domain_examples",
+  "version": "v1",
+  "domain": "politics",
+  "examples": [
+    {
+      "split": "train",
+      "question": "Will candidate a win the election?",
+      "outcome": 1,
+      "features": {
+        "market_prob": 0.46,
+        "poll_margin": 5.0,
+        "mean_article_novelty": 0.70,
+        "max_event_intensity": 0.90,
+        "num_polls": 2
+      },
+      "labels": {
+        "domain": "politics",
+        "market_family": "elections",
+        "regime": "debate_week",
+        "feature_version": "politics.phase1"
+      }
+    },
+    {
+      "split": "train",
+      "question": "Will candidate b win the election?",
+      "outcome": 0,
+      "features": {
+        "market_prob": 0.42,
+        "poll_margin": 5.0,
+        "mean_article_novelty": 0.70,
+        "max_event_intensity": 0.90,
+        "num_polls": 2
+      },
+      "labels": {
+        "domain": "politics",
+        "market_family": "elections",
+        "regime": "debate_week",
+        "feature_version": "politics.phase1"
+      }
+    },
+    {
+      "split": "train",
+      "question": "Will the debate improve candidate a odds?",
+      "outcome": 1,
+      "features": {
+        "market_prob": 0.48,
+        "poll_margin": 4.0,
+        "mean_article_novelty": 0.72,
+        "max_event_intensity": 0.90,
+        "num_polls": 2
+      },
+      "labels": {
+        "domain": "politics",
+        "market_family": "elections",
+        "regime": "debate_week",
+        "feature_version": "politics.phase1"
+      }
+    },
+    {
+      "split": "train",
+      "question": "Will breaking news hurt candidate a this week?",
+      "outcome": 0,
+      "features": {
+        "market_prob": 0.54,
+        "poll_margin": 2.0,
+        "mean_article_novelty": 0.80,
+        "max_event_intensity": 0.95,
+        "num_polls": 2
+      },
+      "labels": {
+        "domain": "politics",
+        "market_family": "elections",
+        "regime": "breaking_news",
+        "feature_version": "politics.phase1"
+      }
+    },
+    {
+      "split": "train",
+      "question": "Will candidate a approval exceed 50 percent?",
+      "outcome": 1,
+      "features": {
+        "market_prob": 0.49,
+        "poll_margin": 4.0,
+        "mean_article_novelty": 0.62,
+        "max_event_intensity": 0.60,
+        "num_polls": 2
+      },
+      "labels": {
+        "domain": "politics",
+        "market_family": "approval",
+        "regime": "campaign",
+        "feature_version": "politics.phase1"
+      }
+    },
+    {
+      "split": "train",
+      "question": "Will candidate a lose support after the debate?",
+      "outcome": 0,
+      "features": {
+        "market_prob": 0.41,
+        "poll_margin": 2.0,
+        "mean_article_novelty": 0.75,
+        "max_event_intensity": 0.70,
+        "num_polls": 2
+      },
+      "labels": {
+        "domain": "politics",
+        "market_family": "elections",
+        "regime": "campaign",
+        "feature_version": "politics.phase1"
+      }
+    },
+    {
+      "split": "calibration",
+      "question": "Will candidate a keep the polling lead next week?",
+      "outcome": 1,
+      "features": {
+        "market_prob": 0.52,
+        "poll_margin": 3.0,
+        "mean_article_novelty": 0.65,
+        "max_event_intensity": 0.72,
+        "num_polls": 2
+      },
+      "labels": {
+        "domain": "politics",
+        "market_family": "elections",
+        "regime": "campaign",
+        "feature_version": "politics.phase1"
+      }
+    },
+    {
+      "split": "calibration",
+      "question": "Will scandal news erase candidate a lead?",
+      "outcome": 0,
+      "features": {
+        "market_prob": 0.57,
+        "poll_margin": 1.0,
+        "mean_article_novelty": 0.88,
+        "max_event_intensity": 0.92,
+        "num_polls": 2
+      },
+      "labels": {
+        "domain": "politics",
+        "market_family": "elections",
+        "regime": "breaking_news",
+        "feature_version": "politics.phase1"
+      }
+    },
+    {
+      "split": "calibration",
+      "question": "Will approval remain above 50 percent this month?",
+      "outcome": 1,
+      "features": {
+        "market_prob": 0.55,
+        "poll_margin": 3.0,
+        "mean_article_novelty": 0.58,
+        "max_event_intensity": 0.55,
+        "num_polls": 2
+      },
+      "labels": {
+        "domain": "politics",
+        "market_family": "approval",
+        "regime": "campaign",
+        "feature_version": "politics.phase1"
+      }
+    },
+    {
+      "split": "evaluation",
+      "question": "Will candidate a win after the debate week?",
+      "outcome": 1,
+      "features": {
+        "market_prob": 0.51,
+        "poll_margin": 4.0,
+        "mean_article_novelty": 0.68,
+        "max_event_intensity": 0.85,
+        "num_polls": 2
+      },
+      "labels": {
+        "domain": "politics",
+        "market_family": "elections",
+        "regime": "debate_week",
+        "feature_version": "politics.phase1"
+      }
+    },
+    {
+      "split": "evaluation",
+      "question": "Will candidate a lose the election after breaking news?",
+      "outcome": 0,
+      "features": {
+        "market_prob": 0.44,
+        "poll_margin": 1.5,
+        "mean_article_novelty": 0.90,
+        "max_event_intensity": 0.94,
+        "num_polls": 2
+      },
+      "labels": {
+        "domain": "politics",
+        "market_family": "elections",
+        "regime": "breaking_news",
+        "feature_version": "politics.phase1"
+      }
+    }
+  ]
+}

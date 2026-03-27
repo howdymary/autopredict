@@ -10,7 +10,7 @@ cd autopredict
 python -m pip install -e .
 ```
 
-Editable install is recommended so package imports and CLI behavior match what you see in the repo.
+Editable install is recommended so package imports and CLI behavior match what you see in the repo. It also installs the small runtime dependency set, including `PyYAML` for config loading.
 
 ## 2. Run the baseline backtest
 
@@ -31,13 +31,14 @@ Example output:
 ```json
 {
   "total_pnl": 23.848357929641246,
-  "sharpe": 7.667475056377162,
+  "sharpe": 4.426818787804096,
   "brier_score": 0.25475000000000003,
   "fill_rate": 0.4420699362191731,
   "num_trades": 4.0,
+  "forecast_source": "dataset_fair_prob",
   "agent_feedback": {
-    "weakness": "calibration",
-    "hypothesis": "Forecasts are too confident relative to realized outcomes."
+    "weakness": "forecast_input_quality",
+    "hypothesis": "The supplied fair_prob inputs appear poorly calibrated; improve the upstream forecast source before blaming execution logic."
   }
 }
 ```
@@ -46,8 +47,8 @@ Example output:
 
 Use these as your first pass:
 
-- `sharpe`: quality of returns relative to volatility
-- `brier_score`: quality of forecast calibration
+- `sharpe`: unannualized per-trade return quality relative to volatility
+- `brier_score`: quality of the supplied forecast calibration on the legacy dataset-driven loop
 - `avg_slippage_bps`: execution cost
 - `fill_rate`: how much of requested size actually filled
 - `agent_feedback`: the framework’s best guess at the next improvement target
@@ -99,7 +100,10 @@ That is the core loop:
 
 ## Smoke checks
 
+Install the dev extras first if you want to run the repo test suite:
+
 ```bash
+python -m pip install -e ".[dev]"
 pytest -q
 python -m autopredict.cli backtest
 python -m autopredict.cli score-latest

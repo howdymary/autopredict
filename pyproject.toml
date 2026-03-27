@@ -27,12 +27,15 @@ classifiers = [
     "Topic :: Office/Business :: Financial",
 ]
 
-# No external dependencies - stdlib only
-dependencies = []
+# Small runtime dependency set
+dependencies = [
+    "PyYAML>=6.0",
+]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0",
+    "pytest-cov>=4.0",
     "black>=22.0",
     "mypy>=0.990",
 ]

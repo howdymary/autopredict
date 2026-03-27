@@ -13,11 +13,12 @@ if _nested_package.is_dir():
     __path__.append(str(_nested_package))
 
 from .agent import AgentConfig, AutoPredictAgent, ExecutionStrategy, MarketState, ProposedOrder
-from .market_env import ExecutionEngine, ExecutionMetrics, OrderBook, evaluate_all
+from .market_env import ExecutionEngine, ExecutionMetrics, OrderBook, calculate_composite_score, evaluate_all
 
 __all__ = [
     "AgentConfig",
     "AutoPredictAgent",
+    "calculate_composite_score",
     "ExecutionEngine",
     "ExecutionMetrics",
     "ExecutionStrategy",

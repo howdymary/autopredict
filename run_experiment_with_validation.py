@@ -10,30 +10,14 @@ import json
 from pathlib import Path
 
 from .agent import AutoPredictAgent, MarketState
-from .market_env import BookLevel, ExecutionEngine, ForecastRecord, OrderBook, TradeRecord, evaluate_all
+from .market_env import ExecutionEngine, ForecastRecord, TradeRecord, evaluate_all
+from .run_experiment import _build_order_book, _realized_pnl
 from .validation import FairProbValidator, ValidationWarning
 
 
 def _load_json(path: str | Path) -> dict | list:
     with Path(path).open("r", encoding="utf-8") as handle:
         return json.load(handle)
-
-
-def _build_order_book(market_id: str, payload: dict[str, list[list[float]]]) -> OrderBook:
-    return OrderBook(
-        market_id=market_id,
-        bids=[BookLevel(price=float(price), size=float(size)) for price, size in payload.get("bids", [])],
-        asks=[BookLevel(price=float(price), size=float(size)) for price, size in payload.get("asks", [])],
-        depth_levels=10,
-    )
-
-
-def _realized_pnl(side: str, fill_price: float, outcome: int, filled_size: float) -> float:
-    if side == "buy":
-        return (float(outcome) - fill_price) * filled_size
-    return (fill_price - float(outcome)) * filled_size
-
-
 def run_backtest_with_validation(
     *,
     config_path: str | Path,
@@ -208,6 +192,8 @@ def run_backtest_with_validation(
     metrics = evaluate_all(forecasts, trades)
     metrics["starting_bankroll"] = starting_bankroll
     metrics["ending_bankroll"] = bankroll
+    metrics["forecast_source"] = "dataset_fair_prob"
+    metrics["forecast_scope"] = "input_forecast_quality"
     metrics["agent_feedback"] = agent.analyze_performance(metrics, guidance)
 
     # Add validation statistics

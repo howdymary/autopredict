@@ -2,11 +2,26 @@
 
 from __future__ import annotations
 
+import argparse
 import json
+import math
 from pathlib import Path
+import sys
 
-from .agent import AutoPredictAgent, MarketState
-from .market_env import BookLevel, ExecutionEngine, ForecastRecord, OrderBook, TradeRecord, evaluate_all
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from autopredict.agent import AutoPredictAgent, MarketState
+    from autopredict.market_env import (
+        BookLevel,
+        ExecutionEngine,
+        ForecastRecord,
+        OrderBook,
+        TradeRecord,
+        evaluate_all,
+    )
+else:
+    from .agent import AutoPredictAgent, MarketState
+    from .market_env import BookLevel, ExecutionEngine, ForecastRecord, OrderBook, TradeRecord, evaluate_all
 
 
 def _load_json(path: str | Path) -> dict | list:
@@ -14,13 +29,57 @@ def _load_json(path: str | Path) -> dict | list:
         return json.load(handle)
 
 
+def _validate_probability(value: object, field_name: str) -> float:
+    probability = float(value)
+    if not math.isfinite(probability) or not 0.0 <= probability <= 1.0:
+        raise ValueError(f"{field_name} must be a finite probability in [0, 1], got {value!r}")
+    return probability
+
+
+def _validate_non_negative_float(value: object, field_name: str) -> float:
+    number = float(value)
+    if not math.isfinite(number) or number < 0.0:
+        raise ValueError(f"{field_name} must be a finite non-negative float, got {value!r}")
+    return number
+
+
+def _build_levels(market_id: str, side: str, raw_levels: object) -> list[BookLevel]:
+    if raw_levels is None:
+        return []
+    if not isinstance(raw_levels, list):
+        raise TypeError(f"{market_id} {side} levels must be a list, got {type(raw_levels).__name__}")
+
+    levels: list[BookLevel] = []
+    for index, level in enumerate(raw_levels):
+        if not isinstance(level, (list, tuple)) or len(level) != 2:
+            raise ValueError(
+                f"{market_id} {side}[{index}] must be a [price, size] pair, got {level!r}"
+            )
+        price = _validate_probability(level[0], f"{market_id} {side}[{index}] price")
+        size = float(level[1])
+        if not math.isfinite(size) or size <= 0.0:
+            raise ValueError(f"{market_id} {side}[{index}] size must be a finite positive float, got {level[1]!r}")
+        levels.append(BookLevel(price=price, size=size))
+
+    return levels
+
+
 def _build_order_book(market_id: str, payload: dict[str, list[list[float]]]) -> OrderBook:
-    return OrderBook(
+    if not isinstance(payload, dict):
+        raise TypeError(f"{market_id} order_book must be an object, got {type(payload).__name__}")
+
+    book = OrderBook(
         market_id=market_id,
-        bids=[BookLevel(price=float(price), size=float(size)) for price, size in payload.get("bids", [])],
-        asks=[BookLevel(price=float(price), size=float(size)) for price, size in payload.get("asks", [])],
+        bids=_build_levels(market_id, "bids", payload.get("bids", [])),
+        asks=_build_levels(market_id, "asks", payload.get("asks", [])),
         depth_levels=10,
     )
+    if book.bids and book.asks and book.bids[0].price > book.asks[0].price:
+        raise ValueError(
+            f"{market_id} has a crossed order book: best bid {book.bids[0].price:.4f} "
+            f"> best ask {book.asks[0].price:.4f}"
+        )
+    return book
 
 
 def _realized_pnl(side: str, fill_price: float, outcome: int, filled_size: float) -> float:
@@ -55,16 +114,24 @@ def run_backtest(
     forecasts: list[ForecastRecord] = []
     trades: list[TradeRecord] = []
 
-    for record in dataset:
+    for index, record in enumerate(dataset):
         if not isinstance(record, dict):
-            continue
+            raise TypeError(f"Dataset record {index} must be an object, got {type(record).__name__}")
 
-        market_id = str(record["market_id"])
-        market_prob = float(record["market_prob"])
-        fair_prob = float(record["fair_prob"])
+        market_id = str(record["market_id"]).strip()
+        if not market_id:
+            raise ValueError(f"Dataset record {index} has an empty market_id")
+
+        market_prob = _validate_probability(record["market_prob"], f"{market_id} market_prob")
+        fair_prob = _validate_probability(record["fair_prob"], f"{market_id} fair_prob")
         outcome = int(record["outcome"])
-        next_mid = float(record.get("next_mid_price", market_prob))
-        expiry_hours = float(record.get("time_to_expiry_hours", 24.0))
+        if outcome not in (0, 1):
+            raise ValueError(f"{market_id} outcome must be 0 or 1, got {record['outcome']!r}")
+        next_mid = _validate_probability(record.get("next_mid_price", market_prob), f"{market_id} next_mid_price")
+        expiry_hours = _validate_non_negative_float(
+            record.get("time_to_expiry_hours", 24.0),
+            f"{market_id} time_to_expiry_hours",
+        )
         order_book = _build_order_book(market_id, record["order_book"])
 
         state = MarketState(
@@ -126,5 +193,31 @@ def run_backtest(
     metrics = evaluate_all(forecasts, trades)
     metrics["starting_bankroll"] = starting_bankroll
     metrics["ending_bankroll"] = bankroll
+    metrics["forecast_source"] = "dataset_fair_prob"
+    metrics["forecast_scope"] = "input_forecast_quality"
     metrics["agent_feedback"] = agent.analyze_performance(metrics, guidance)
     return metrics
+
+
+def _build_parser() -> argparse.ArgumentParser:
+    parser = argparse.ArgumentParser(description="Run the legacy AutoPredict backtest harness")
+    parser.add_argument("--config", required=True, help="Path to strategy config JSON")
+    parser.add_argument("--dataset", required=True, help="Path to dataset JSON")
+    parser.add_argument("--strategy-guidance", help="Optional path to strategy guidance markdown")
+    parser.add_argument("--starting-bankroll", type=float, default=1_000.0, help="Starting bankroll")
+    return parser
+
+
+def main() -> None:
+    args = _build_parser().parse_args()
+    metrics = run_backtest(
+        config_path=args.config,
+        dataset_path=args.dataset,
+        strategy_guidance_path=args.strategy_guidance,
+        starting_bankroll=args.starting_bankroll,
+    )
+    print(json.dumps(metrics, indent=2, sort_keys=True))
+
+
+if __name__ == "__main__":
+    main()

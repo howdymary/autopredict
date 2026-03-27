@@ -1,0 +1,65 @@
+# Paper Trading Configuration
+# Safe configuration for testing strategies without real money
+
+name: paper_trading_experiment
+description: Conservative paper trading setup for strategy validation
+
+strategy:
+  name: mispriced_probability
+  min_edge: 0.05                    # Minimum 5% edge to trade
+  kelly_fraction: 0.25              # Quarter-Kelly position sizing
+  max_position_pct: 0.02            # Max 2% of bankroll per position
+  aggressive_edge: 0.12             # Use market orders when edge >= 12%
+  min_book_liquidity: 60.0          # Require $60 minimum liquidity
+  max_spread_pct: 0.04              # Max 4% spread (unless edge is very strong)
+  max_depth_fraction: 0.15          # Don't take >15% of visible depth
+  split_threshold_fraction: 0.25    # Split orders if >25% of depth
+  limit_price_improvement_ticks: 1.0  # Improve limit price by 1 tick
+
+risk:
+  max_position_per_market: 100.0    # Max $100 per individual market
+  max_total_exposure: 500.0         # Max $500 total exposure
+  max_daily_loss: 50.0              # Stop trading if daily loss >= $50
+  kill_switch_threshold: -100.0     # Emergency stop at -$100 daily loss
+  max_positions: 20                 # Max 20 simultaneous positions
+  max_correlation_exposure: 0.3     # Future use: max correlated exposure
+  position_timeout_hours: 168.0     # Force close positions after 1 week
+  enable_kill_switch: true          # Enable kill switch (always true)
+
+venue:
+  name: polymarket
+  mode: paper                       # PAPER MODE - no real money
+  api_key: null                     # Not needed for paper trading
+  api_secret: null
+  base_url: null
+  max_requests_per_minute: 60
+  timeout_seconds: 30.0
+  enable_websocket: false
+  testnet: true
+
+backtest:
+  initial_bankroll: 1000.0          # Start with $1000 paper money
+  commission_rate: 0.01             # 1% commission (realistic for Polymarket)
+  slippage_model: proportional      # Proportional slippage model
+  slippage_bps: 5.0                 # 5 basis points average slippage
+  start_date: null                  # Use current date
+  end_date: null
+  data_source: simulation           # Simulated market data
+
+logging:
+  log_dir: ./logs/paper             # Paper trading logs directory
+  log_level: INFO                   # INFO level (DEBUG for more detail)
+  log_trades: true                  # Log all trades
+  log_decisions: true               # Log all decisions (including skips)
+  log_performance: true             # Log periodic performance snapshots
+  performance_interval_minutes: 60.0  # Log performance every hour
+  structured_format: true           # Use JSON format for structured logs
+  console_output: true              # Output logs to console
+
+metadata:
+  created: "2026-03-26"
+  purpose: "Paper trading for strategy development"
+  tags:
+    - paper
+    - safe
+    - development

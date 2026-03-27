@@ -12,6 +12,8 @@ if __package__ in {None, ""}:
     sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 from autopredict.run_experiment import run_backtest
+from autopredict.learning.logger import TradeLogger
+from autopredict.learning.analyzer import PerformanceAnalyzer
 
 
 PROJECT_ROOT = Path(__file__).resolve().parent
@@ -69,6 +71,86 @@ def command_trade_live(args: argparse.Namespace) -> None:
     raise SystemExit("Live trading adapter is intentionally not implemented in this scaffold")
 
 
+def command_learn_analyze(args: argparse.Namespace) -> None:
+    """Analyze recent trading performance from logs."""
+    defaults = _load_defaults()
+    log_dir = Path(args.log_dir) if args.log_dir else _resolve("state/trades")
+
+    logger = TradeLogger(log_dir)
+
+    # Load logs
+    if args.days:
+        logs = logger.load_recent(days=args.days)
+        print(f"Loaded {len(logs)} trade logs from last {args.days} days")
+    else:
+        logs = logger.load_all()
+        print(f"Loaded {len(logs)} total trade logs")
+
+    if not logs:
+        print("No trade logs found. Run some backtests first!")
+        return
+
+    # Generate analysis
+    analyzer = PerformanceAnalyzer(logs)
+    report = analyzer.generate_report()
+
+    # Print summary
+    print("\n" + "=" * 60)
+    print("PERFORMANCE ANALYSIS")
+    print("=" * 60)
+    print(f"Total trades: {report.total_trades}")
+    print(f"Total PnL: ${report.total_pnl:.2f}")
+    print(f"Win rate: {report.win_rate:.2%}")
+    print(f"Avg win: ${report.avg_win:.2f}")
+    print(f"Avg loss: ${report.avg_loss:.2f}")
+    if report.sharpe_ratio is not None:
+        print(f"Sharpe ratio: {report.sharpe_ratio:.3f}")
+    print(f"Calibration error: {report.calibration_error:.3f}")
+    print(f"Edge capture rate: {report.edge_capture_rate:.2%}")
+
+    print("\nDecision breakdown:")
+    for decision, count in report.by_decision.items():
+        print(f"  {decision}: {count}")
+
+    if report.failure_regimes:
+        print("\nFailure regimes identified:")
+        for regime in report.failure_regimes:
+            print(f"  - {regime}")
+
+    if report.recommendations:
+        print("\nRecommendations:")
+        for rec in report.recommendations:
+            print(f"  - {rec}")
+
+    # Save full report if requested
+    if args.output:
+        output_path = Path(args.output)
+        with output_path.open("w", encoding="utf-8") as f:
+            json.dump(report.to_dict(), f, indent=2)
+        print(f"\nFull report saved to {output_path}")
+
+
+def command_learn_tune(args: argparse.Namespace) -> None:
+    """Tune strategy parameters via grid search."""
+    print("Parameter tuning requires full backtest integration.")
+    print("Use scripts/learn_and_improve.py for advanced tuning workflows.")
+    print(f"\nExample:")
+    print(f"  python scripts/learn_and_improve.py tune \\")
+    print(f"    --config {args.config or 'strategy_configs/default.json'} \\")
+    print(f"    --output configs/strategy_tuned.json")
+
+
+def command_learn_improve(args: argparse.Namespace) -> None:
+    """Run full improvement loop."""
+    print("Full improvement loop requires complete backtest integration.")
+    print("Use scripts/learn_and_improve.py for the complete workflow.")
+    print(f"\nExample:")
+    print(f"  python scripts/learn_and_improve.py improve \\")
+    print(f"    --config {args.config or 'strategy_configs/default.json'} \\")
+    print(f"    --log-dir state/trades \\")
+    print(f"    --auto-save")
+
+
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="AutoPredict experiment CLI")
     subparsers = parser.add_subparsers(dest="command", required=True)
@@ -84,6 +166,31 @@ def build_parser() -> argparse.ArgumentParser:
     trade_live = subparsers.add_parser("trade-live", help="Placeholder live trading entrypoint")
     trade_live.add_argument("--config", help="Unused placeholder for future adapter parity")
     trade_live.set_defaults(func=command_trade_live)
+
+    # Learning commands
+    learn = subparsers.add_parser("learn", help="Self-improvement and learning tools")
+    learn_subparsers = learn.add_subparsers(dest="learn_command", required=True)
+
+    # learn analyze
+    learn_analyze = learn_subparsers.add_parser("analyze", help="Analyze recent trading performance")
+    learn_analyze.add_argument("--log-dir", help="Directory containing trade logs")
+    learn_analyze.add_argument("--days", type=int, help="Only analyze last N days")
+    learn_analyze.add_argument("--output", help="Save full report to JSON file")
+    learn_analyze.set_defaults(func=command_learn_analyze)
+
+    # learn tune
+    learn_tune = learn_subparsers.add_parser("tune", help="Tune strategy parameters")
+    learn_tune.add_argument("--config", help="Current strategy config JSON file")
+    learn_tune.add_argument("--output", help="Save tuned config to this file")
+    learn_tune.set_defaults(func=command_learn_tune)
+
+    # learn improve
+    learn_improve = learn_subparsers.add_parser("improve", help="Run full improvement loop")
+    learn_improve.add_argument("--config", help="Current strategy config JSON file")
+    learn_improve.add_argument("--log-dir", help="Directory containing trade logs")
+    learn_improve.add_argument("--auto-save", action="store_true", help="Auto-save improved config")
+    learn_improve.set_defaults(func=command_learn_improve)
+
     return parser
 
 

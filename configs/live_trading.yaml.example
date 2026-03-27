@@ -1,0 +1,82 @@
+# Live Trading Configuration Template
+# DANGER: This configuration uses REAL MONEY
+#
+# Instructions:
+# 1. Copy this file to live_trading.yaml (NOT in version control!)
+# 2. Set your API keys as environment variables:
+#    export POLYMARKET_API_KEY="your-key-here"
+#    export POLYMARKET_API_SECRET="your-secret-here"
+# 3. Review and adjust all limits carefully
+# 4. Start with small limits until comfortable
+# 5. NEVER commit live_trading.yaml to git
+
+name: live_trading_experiment
+description: LIVE TRADING - REAL MONEY AT RISK
+
+strategy:
+  name: conservative_live
+  min_edge: 0.08                    # Higher minimum edge for live trading
+  kelly_fraction: 0.20              # More conservative Kelly fraction
+  max_position_pct: 0.01            # Max 1% of bankroll per position
+  aggressive_edge: 0.15             # Higher threshold for market orders
+  min_book_liquidity: 100.0         # Require deeper liquidity
+  max_spread_pct: 0.03              # Tighter spread tolerance
+  max_depth_fraction: 0.10          # Take less depth to minimize impact
+  split_threshold_fraction: 0.20    # Split more aggressively
+  limit_price_improvement_ticks: 2.0  # More aggressive limit pricing
+
+risk:
+  max_position_per_market: 50.0     # ADJUST THIS - max per market
+  max_total_exposure: 200.0         # ADJUST THIS - total exposure limit
+  max_daily_loss: 25.0              # ADJUST THIS - daily loss limit
+  kill_switch_threshold: -50.0      # ADJUST THIS - emergency stop
+  max_positions: 10                 # Fewer simultaneous positions
+  max_correlation_exposure: 0.2     # Lower correlation exposure
+  position_timeout_hours: 72.0      # Close positions after 3 days
+  enable_kill_switch: true          # MUST BE TRUE for live trading
+
+venue:
+  name: polymarket
+  mode: live                        # LIVE MODE - REAL MONEY
+  api_key: ${POLYMARKET_API_KEY}    # Load from environment variable
+  api_secret: ${POLYMARKET_API_SECRET}  # Load from environment variable
+  base_url: null                    # Use default URL
+  max_requests_per_minute: 30       # Conservative rate limiting
+  timeout_seconds: 30.0
+  enable_websocket: true            # Use websocket for real-time data
+  testnet: false                    # PRODUCTION - set to true for testnet
+
+backtest:
+  initial_bankroll: 1000.0          # Your actual starting capital
+  commission_rate: 0.01             # Actual commission rate
+  slippage_model: market_impact     # Realistic slippage model
+  slippage_bps: 10.0                # Conservative slippage estimate
+  start_date: null
+  end_date: null
+  data_source: live                 # Live market data
+
+logging:
+  log_dir: ./logs/live              # IMPORTANT: Different directory for live logs
+  log_level: INFO                   # Use INFO or WARNING for production
+  log_trades: true                  # MUST log all trades
+  log_decisions: true               # Log all decisions
+  log_performance: true             # Log performance snapshots
+  performance_interval_minutes: 15.0  # More frequent performance logging
+  structured_format: true           # Use JSON format
+  console_output: true              # Output to console
+
+metadata:
+  created: "2026-03-26"
+  purpose: "Live trading - REAL MONEY"
+  tags:
+    - live
+    - production
+    - danger
+
+  # IMPORTANT NOTES:
+  # - Start with SMALL limits
+  # - Monitor continuously when running
+  # - Have a plan to manually intervene
+  # - Test kill switch before going live
+  # - Keep logs for analysis
+  # - Never commit this file to git after adding real keys

@@ -11,3 +11,19 @@ htmlcov/
 .DS_Store
 state/backtests/*/
 *.log
+
+# Live trading configuration (contains API keys)
+configs/live_trading.yaml
+
+# Log files and data
+logs/
+*.jsonl
+
+# Environment files
+.env
+.env.local
+
+# API keys and secrets
+*_secret.yaml
+*_secrets.yaml
+api_keys.yaml

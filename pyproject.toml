@@ -42,11 +42,11 @@ Homepage = "https://github.com/yourusername/autopredict"
 Documentation = "https://github.com/yourusername/autopredict/blob/main/README.md"
 Repository = "https://github.com/yourusername/autopredict"
 
-[project.scripts]
-autopredict = "autopredict.cli:main"
+# [project.scripts]
+# autopredict = "autopredict.cli:main"  # TODO: Implement CLI
 
 [tool.setuptools]
-packages = ["autopredict", "autopredict.scripts", "autopredict.tests", "autopredict.validation"]
+packages = ["autopredict", "autopredict.core", "autopredict.strategies", "autopredict.markets"]
 
 [tool.black]
 line-length = 100

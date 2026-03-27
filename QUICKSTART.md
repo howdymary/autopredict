@@ -31,7 +31,7 @@ Example output:
 ```json
 {
   "total_pnl": 23.848357929641246,
-  "sharpe": 7.667475056377162,
+  "sharpe": 4.426818787804096,
   "brier_score": 0.25475000000000003,
   "fill_rate": 0.4420699362191731,
   "num_trades": 4.0,
@@ -46,7 +46,7 @@ Example output:
 
 Use these as your first pass:
 
-- `sharpe`: quality of returns relative to volatility
+- `sharpe`: unannualized per-trade return quality relative to volatility
 - `brier_score`: quality of forecast calibration
 - `avg_slippage_bps`: execution cost
 - `fill_rate`: how much of requested size actually filled

@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Mapping
 import math
 import statistics
 
@@ -662,8 +662,10 @@ def _financial_metrics(trades: list[TradeRecord]) -> dict[str, float]:
     if len(pnl_series) < 2:
         sharpe = 0.0
     else:
-        std = statistics.stdev(pnl_series)
-        sharpe = (statistics.fmean(pnl_series) / std * math.sqrt(len(pnl_series))) if std > EPSILON else 0.0
+        std = statistics.pstdev(pnl_series)
+        # Keep this unannualized so strategy ranking does not mechanically improve
+        # just because one configuration trades more frequently than another.
+        sharpe = (statistics.fmean(pnl_series) / std) if std > EPSILON else 0.0
 
     running = 0.0
     peak = 0.0
@@ -704,3 +706,48 @@ def evaluate_all(forecasts: list[ForecastRecord], trades: list[TradeRecord]) -> 
     metrics["adverse_selection_rate"] = ExecutionMetrics.calculate_adverse_selection_rate(trades)
     metrics["implementation_shortfall_bps"] = ExecutionMetrics.calculate_implementation_shortfall(trades)
     return metrics
+
+
+def _clamp(value: float, lower: float, upper: float) -> float:
+    return max(lower, min(upper, value))
+
+
+def _normalize_against_baseline(value: float, baseline: float) -> float:
+    """Normalize a metric against the baseline with equal performance = 1.0."""
+
+    if abs(baseline) <= EPSILON:
+        if abs(value) <= EPSILON:
+            return 1.0
+        return 2.0 if value > 0 else 0.0
+
+    return _clamp(1.0 + ((value - baseline) / abs(baseline)), 0.0, 2.0)
+
+
+def calculate_composite_score(
+    metrics: Mapping[str, float | int],
+    baseline_metrics: Mapping[str, float | int],
+) -> float:
+    """Combine forecast, execution, and financial metrics into one scalar score."""
+
+    sharpe = _normalize_against_baseline(
+        float(metrics.get("sharpe", 0.0) or 0.0),
+        float(baseline_metrics.get("sharpe", 0.0) or 0.0),
+    )
+    pnl = _normalize_against_baseline(
+        float(metrics.get("total_pnl", 0.0) or 0.0),
+        float(baseline_metrics.get("total_pnl", 0.0) or 0.0),
+    )
+    drawdown = _normalize_against_baseline(
+        float(metrics.get("max_drawdown", 0.0) or 0.0),
+        float(baseline_metrics.get("max_drawdown", 0.0) or 0.0),
+    )
+    brier = _clamp(float(metrics.get("brier_score", 1.0) or 1.0), 0.0, 1.0)
+    fill_rate = _clamp(float(metrics.get("fill_rate", 0.0) or 0.0), 0.0, 1.0)
+
+    return (
+        0.30 * sharpe
+        + 0.25 * (1.0 - brier)
+        + 0.20 * pnl
+        + 0.15 * fill_rate
+        + 0.10 * (1.0 - drawdown)
+    )

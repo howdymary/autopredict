@@ -45,7 +45,7 @@ Example output:
 ```json
 {
   "total_pnl": 23.848357929641246,
-  "sharpe": 7.667475056377162,
+  "sharpe": 4.426818787804096,
   "brier_score": 0.25475000000000003,
   "fill_rate": 0.4420699362191731,
   "num_trades": 4.0,
@@ -140,6 +140,8 @@ AutoPredict reports three groups of metrics:
 - Epistemic: `brier_score`, `calibration_by_bucket`
 - Financial: `total_pnl`, `sharpe`, `max_drawdown`, `win_rate`
 - Execution: `avg_slippage_bps`, `fill_rate`, `market_impact_bps`, `implementation_shortfall_bps`
+
+In the legacy evaluator, `sharpe` is intentionally reported as an unannualized per-trade return-to-volatility ratio so configs are not rewarded just for trading more often. The evaluator also exposes `calculate_composite_score(...)` for baseline-relative ratchet decisions.
 
 The framework also returns `agent_feedback`, a short diagnosis of the current bottleneck:
 

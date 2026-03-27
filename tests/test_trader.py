@@ -235,6 +235,31 @@ class TestPaperTrader:
         total_commission = trader.get_total_commission_paid()
         assert total_commission == 5.0  # 5 trades * 1.0 commission each
 
+    def test_limit_order_randomness_is_seeded(self):
+        """Paper limit fills should be reproducible with the same seed."""
+        trader_a = PaperTrader(limit_fill_rate=0.5, seed=7)
+        trader_b = PaperTrader(limit_fill_rate=0.5, seed=7)
+
+        order_a = Order(
+            market_id="test",
+            side="buy",
+            order_type="limit",
+            size=100.0,
+            limit_price=0.45,
+        )
+        order_b = Order(
+            market_id="test",
+            side="buy",
+            order_type="limit",
+            size=100.0,
+            limit_price=0.45,
+        )
+
+        results_a = [trader_a.place_order(order_a, current_price=0.50).filled for _ in range(5)]
+        results_b = [trader_b.place_order(order_b, current_price=0.50).filled for _ in range(5)]
+
+        assert results_a == results_b
+
 
 class TestExecutionReport:
     """Test ExecutionReport functionality."""

@@ -18,6 +18,7 @@ configs/live_trading.yaml
 # Log files and data
 logs/
 *.jsonl
+!experiments/log.jsonl
 
 # Environment files
 .env

@@ -663,7 +663,10 @@ def _financial_metrics(trades: list[TradeRecord]) -> dict[str, float]:
         sharpe = 0.0
     else:
         std = statistics.stdev(pnl_series)
-        sharpe = (statistics.fmean(pnl_series) / std * math.sqrt(len(pnl_series))) if std > EPSILON else 0.0
+        # Un-annualized Sharpe: mean/std without sqrt(N) scaling.
+        # Previous version used sqrt(N) which made Sharpe incomparable
+        # across configs with different trade counts.
+        sharpe = (statistics.fmean(pnl_series) / std) if std > EPSILON else 0.0
 
     running = 0.0
     peak = 0.0
@@ -680,6 +683,61 @@ def _financial_metrics(trades: list[TradeRecord]) -> dict[str, float]:
         "num_trades": num_trades,
         "win_rate": win_rate,
     }
+
+
+def calculate_composite_score(
+    metrics: dict[str, Any],
+    baseline: dict[str, Any] | None = None,
+) -> float:
+    """Calculate a single composite score for ratchet comparison.
+
+    Components (weights sum to 1.0):
+      - 0.35 * normalized_sharpe         (risk-adjusted returns)
+      - 0.25 * normalized_pnl            (raw profitability)
+      - 0.20 * fill_rate                 (execution quality, already 0-1)
+      - 0.20 * (1 - normalized_drawdown) (risk control)
+
+    Brier score is excluded because the agent does not generate forecasts;
+    it receives fair_prob as input, making Brier a dataset constant.
+
+    Normalization: each metric is divided by the baseline value and clamped
+    to [0, 2] to prevent any single metric from dominating.  When no
+    baseline is provided the raw values are used directly.
+    """
+
+    def _clamp(value: float) -> float:
+        return max(0.0, min(value, 2.0))
+
+    def _normalize(value: float, base: float) -> float:
+        if abs(base) < EPSILON:
+            return 1.0 if abs(value) < EPSILON else 2.0
+        return _clamp(value / base)
+
+    sharpe = float(metrics.get("sharpe", 0.0) or 0.0)
+    pnl = float(metrics.get("total_pnl", 0.0) or 0.0)
+    fill_rate = float(metrics.get("fill_rate", 0.0) or 0.0)
+    drawdown = float(metrics.get("max_drawdown", 0.0) or 0.0)
+
+    if baseline is not None:
+        b_sharpe = float(baseline.get("sharpe", 0.0) or 0.0)
+        b_pnl = float(baseline.get("total_pnl", 0.0) or 0.0)
+        b_drawdown = float(baseline.get("max_drawdown", 0.0) or 0.0)
+
+        n_sharpe = _normalize(sharpe, b_sharpe)
+        n_pnl = _normalize(pnl, b_pnl)
+        n_drawdown = _normalize(drawdown, b_drawdown)
+    else:
+        n_sharpe = sharpe
+        n_pnl = pnl
+        n_drawdown = drawdown
+
+    score = (
+        0.35 * n_sharpe
+        + 0.25 * n_pnl
+        + 0.20 * fill_rate
+        + 0.20 * (1.0 - n_drawdown)
+    )
+    return score
 
 
 def evaluate_all(forecasts: list[ForecastRecord], trades: list[TradeRecord]) -> dict[str, Any]:

@@ -142,6 +142,7 @@ class PaperTrader:
         commission_rate: float = 0.01,
         slippage_bps: float = 5.0,
         limit_fill_rate: float = 0.4,
+        seed: int | None = 42,
     ):
         """Initialize paper trader.
 
@@ -149,10 +150,14 @@ class PaperTrader:
             commission_rate: Commission as decimal (e.g., 0.01 for 1%)
             slippage_bps: Average slippage in basis points for market orders
             limit_fill_rate: Probability of limit order fills (0-1)
+            seed: Random seed for deterministic limit order fills (None for unseeded)
         """
+        import random as _random
+
         self.commission_rate = commission_rate
         self.slippage_bps = slippage_bps
         self.limit_fill_rate = limit_fill_rate
+        self._rng = _random.Random(seed)
         self.trade_history: list[ExecutionReport] = []
         self.positions: dict[str, float] = {}
 
@@ -219,9 +224,7 @@ class PaperTrader:
         return report
 
     def _execute_limit_order(self, order: Order, current_price: float) -> ExecutionReport:
-        """Simulate limit order execution with probabilistic fills."""
-        import random
-
+        """Simulate limit order execution with deterministic probabilistic fills."""
         # Check if limit order would be immediately executable
         if order.limit_price is None:
             raise ValueError("limit_price required for limit orders")
@@ -231,8 +234,8 @@ class PaperTrader:
             (order.side == "sell" and order.limit_price <= current_price)
         )
 
-        # Probabilistic fill based on limit_fill_rate
-        filled = is_executable or (random.random() < self.limit_fill_rate)
+        # Probabilistic fill based on limit_fill_rate (seeded RNG for reproducibility)
+        filled = is_executable or (self._rng.random() < self.limit_fill_rate)
 
         if not filled:
             return ExecutionReport(

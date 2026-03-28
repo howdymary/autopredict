@@ -1,13 +1,12 @@
 {
   "name": "baseline_execution_aware",
   "min_edge": 0.05,
-  "aggressive_edge": 0.14,
+  "aggressive_edge": 0.12,
   "max_risk_fraction": 0.02,
   "max_position_notional": 25.0,
   "min_book_liquidity": 60.0,
-  "max_spread_pct": 0.06,
+  "max_spread_pct": 0.04,
   "max_depth_fraction": 0.15,
   "split_threshold_fraction": 0.25,
-  "passive_requote_fraction": 0.25,
-  "limit_price_improvement_ticks": 2.0
+  "passive_requote_fraction": 0.25
 }

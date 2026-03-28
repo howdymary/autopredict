@@ -37,6 +37,11 @@ class TestEnvironmentVariableSubstitution:
         with pytest.raises(ValueError, match="Environment variable.*not found"):
             substitute_env_vars("${DEFINITELY_MISSING_VAR}")
 
+    def test_missing_variable_can_be_preserved_for_dry_run(self):
+        """Dry-run config loading can preserve unresolved env vars as placeholders."""
+        result = substitute_env_vars("${DEFINITELY_MISSING_VAR}", allow_missing=True)
+        assert "DEFINITELY_MISSING_VAR" in result
+
     def test_nested_substitution(self):
         """Test substitution in nested structures."""
         os.environ["NESTED_VAR"] = "nested_value"
@@ -216,6 +221,26 @@ class TestConfigLoader:
         try:
             config = load_config(temp_path)
             assert config.venue.api_key == "secret_key_123"
+        finally:
+            os.unlink(temp_path)
+
+    def test_load_with_missing_env_vars_for_dry_run(self):
+        """Dry-run config loading should not require live env vars up front."""
+        config_data = {
+            "name": "test",
+            "venue": {
+                "mode": "live",
+                "api_key": "${POLYMARKET_API_KEY}",
+            },
+        }
+
+        with tempfile.NamedTemporaryFile(mode='w', suffix='.yaml', delete=False) as f:
+            yaml.dump(config_data, f)
+            temp_path = f.name
+
+        try:
+            config = load_config(temp_path, allow_missing_env=True)
+            assert "POLYMARKET_API_KEY" in str(config.venue.api_key)
         finally:
             os.unlink(temp_path)
 

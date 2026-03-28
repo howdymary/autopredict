@@ -30,6 +30,7 @@ classifiers = [
 # Small runtime dependency set
 dependencies = [
     "PyYAML>=6.0",
+    "requests>=2.31",
 ]
 
 [project.optional-dependencies]
@@ -38,6 +39,9 @@ dev = [
     "pytest-cov>=4.0",
     "black>=22.0",
     "mypy>=0.990",
+]
+polymarket = [
+    "py-clob-client>=0.34.6; python_full_version>='3.9.10'",
 ]
 
 [project.urls]

@@ -15,6 +15,14 @@ from autopredict.domains.finance import (
     finance_evaluation_examples,
     finance_training_examples,
 )
+from autopredict.domains.generic import (
+    GenericSpecialistStrategy,
+    build_default_generic_model,
+    generic_calibration_examples,
+    generic_dataset,
+    generic_evaluation_examples,
+    generic_training_examples,
+)
 from autopredict.domains.modeling import (
     DatasetSplitSummary,
     DomainModelReportCard,
@@ -35,6 +43,7 @@ from autopredict.domains.politics import (
     politics_training_examples,
 )
 from autopredict.domains.registry import DomainRegistry, domain_registry
+from autopredict.domains.router import RoutedSpecialistStrategy
 from autopredict.domains.weather import (
     WeatherDomainAdapter,
     WeatherSpecialistStrategy,
@@ -54,16 +63,19 @@ __all__ = [
     "DatasetSplitSummary",
     "FinanceDomainAdapter",
     "FinanceSpecialistStrategy",
+    "GenericSpecialistStrategy",
     "ModelPrediction",
     "QuestionConditionedDataset",
     "PoliticsDomainAdapter",
     "PoliticsSpecialistStrategy",
+    "RoutedSpecialistStrategy",
     "QuestionConditionedExample",
     "QuestionConditionedLinearModel",
     "SpecialistOrderPolicy",
     "WeatherDomainAdapter",
     "WeatherSpecialistStrategy",
     "build_default_finance_model",
+    "build_default_generic_model",
     "build_default_politics_model",
     "build_default_weather_model",
     "build_domain_report_card",
@@ -72,6 +84,10 @@ __all__ = [
     "finance_dataset",
     "finance_evaluation_examples",
     "finance_training_examples",
+    "generic_calibration_examples",
+    "generic_dataset",
+    "generic_evaluation_examples",
+    "generic_training_examples",
     "load_question_conditioned_dataset",
     "politics_calibration_examples",
     "politics_dataset",

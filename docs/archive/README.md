@@ -1,16 +1,21 @@
 # Archive
 
-This folder keeps historical project artifacts that are useful for provenance but not necessary for a new user getting started.
+This folder is intentionally minimal.
 
-You will find:
+The repo used to carry a large set of historical phase summaries, calibration deep-dives, prompt
+artifacts, and internal evaluation notes. Those files were removed from the working tree to keep the
+public repository smaller and easier to scan.
 
-- phase summaries and deliverable checklists
-- design proposals and migration plans
-- calibration deep-dives and one-off reports
-- research-style writeups and internal evaluation notes
+What to use instead:
 
-If you are new to the project, start with:
+- [../../README.md](../../README.md): current project entrypoint
+- [../../QUICKSTART.md](../../QUICKSTART.md): current onboarding path
+- [../README.md](../README.md): current docs index
+- `git log -- docs/archive` and `git show <commit>:<path>`: recover older archival material when needed
 
-- [../../README.md](../../README.md)
-- [../../QUICKSTART.md](../../QUICKSTART.md)
-- [../README.md](../README.md)
+Rule of thumb:
+
+- active usage guidance belongs under `docs/`
+- runtime code belongs under `autopredict/`
+- historical analysis should live in git history rather than the default checkout unless it is still
+  operationally useful

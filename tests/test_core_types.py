@@ -1,7 +1,8 @@
 """Tests for core types."""
 
+from datetime import datetime, timedelta, timezone
+
 import pytest
-from datetime import datetime, timedelta
 
 from autopredict.core.types import (
     EdgeEstimate,
@@ -103,6 +104,22 @@ class TestMarketState:
 
         # Spread = 0.02, mid = 0.5, bps = 0.02 / 0.5 * 10000 = 400
         assert abs(state.spread_bps - 400.0) < 1.0
+
+    def test_time_to_expiry_hours_supports_timezone_aware_expiry(self):
+        """Live venue markets can carry timezone-aware expiries without crashing."""
+        state = MarketState(
+            market_id="aware-market",
+            question="Will this test remain timezone safe?",
+            market_prob=0.5,
+            expiry=datetime.now(timezone.utc) + timedelta(hours=12),
+            category=MarketCategory.OTHER,
+            best_bid=0.49,
+            best_ask=0.51,
+            bid_liquidity=100.0,
+            ask_liquidity=100.0,
+        )
+
+        assert 0.0 < state.time_to_expiry_hours <= 12.1
 
 
 class TestEdgeEstimate:

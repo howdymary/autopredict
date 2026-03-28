@@ -31,6 +31,16 @@ def _run_legacy_script(*args: str) -> subprocess.CompletedProcess[str]:
     )
 
 
+def _run_live_script(*args: str) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [sys.executable, str(ROOT / "scripts/run_live.py"), *args],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+
+
 def test_module_backtest_outputs_metrics_json() -> None:
     completed = _run_cli("backtest")
     metrics = json.loads(completed.stdout)
@@ -62,3 +72,14 @@ def test_legacy_run_experiment_script_executes_directly() -> None:
 
     assert metrics["num_trades"] >= 1
     assert metrics["forecast_source"] == "dataset_fair_prob"
+
+
+def test_live_script_dry_run_does_not_require_real_env_vars() -> None:
+    completed = _run_live_script(
+        "--config",
+        str(ROOT / "configs/live_trading.yaml.example"),
+        "--dry-run",
+    )
+
+    assert "DRY RUN MODE" in completed.stdout
+    assert "POLYMARKET_API_KEY" in completed.stdout

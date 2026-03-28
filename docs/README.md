@@ -19,4 +19,6 @@ Use this folder when you want more detail than the top-level README and quicksta
 
 ## Archive
 
-Longer reports, phase summaries, proposals, and one-off analysis documents were moved to [archive/README.md](archive/README.md) to keep the repo root clean for new users.
+The working tree now keeps only active docs. Historical reports, phase notes, and prompt assets were
+trimmed from the default checkout to keep the repo compact; use [archive/README.md](archive/README.md)
+and git history if you need that older context.

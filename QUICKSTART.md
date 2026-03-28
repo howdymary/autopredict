@@ -98,6 +98,16 @@ That is the core loop:
 - You want the system overview: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - Something broke: [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)
 
+## 7. Run the forecast-owned ratchet
+
+The legacy backtest loop still reports `forecast_source: "dataset_fair_prob"`. If you want the agent to own forecast generation instead of inheriting that column, use the package-native ratchet:
+
+```bash
+python -m autopredict.cli learn improve --dataset datasets/sample_markets.json
+```
+
+This path converts the resolved dataset into scaffold snapshots, routes each market through question-conditioned specialist models, and then runs the walk-forward mutation and promotion loop on those agent-generated forecasts.
+
 ## Smoke checks
 
 Install the dev extras first if you want to run the repo test suite:

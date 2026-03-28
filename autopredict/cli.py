@@ -7,9 +7,14 @@ from datetime import datetime, timezone
 import json
 from pathlib import Path
 
+from .evaluation import load_resolved_snapshots
 from .learning.analyzer import PerformanceAnalyzer
 from .learning.logger import TradeLogger
 from .run_experiment import run_backtest
+from .self_improvement import (
+    improvement_config_with_population,
+    run_forecast_owned_ratchet,
+)
 
 
 PACKAGE_ROOT = Path(__file__).resolve().parent
@@ -176,15 +181,30 @@ def command_learn_tune(args: argparse.Namespace) -> None:
 
 
 def command_learn_improve(args: argparse.Namespace) -> None:
-    """Describe the current improvement-loop entrypoint."""
+    """Run the package-native forecast-owned ratchet."""
 
-    print("Full improvement loop requires complete backtest integration.")
-    print("Use scripts/learn_and_improve.py for the complete workflow.")
-    print("\nExample:")
-    print("  python scripts/learn_and_improve.py improve \\")
-    print(f"    --config {args.config or 'strategy_configs/default.json'} \\")
-    print("    --log-dir state/trades \\")
-    print("    --auto-save")
+    defaults = _load_defaults()
+    dataset_path = (
+        _resolve_cli_path(args.dataset)
+        if args.dataset
+        else _resolve_default(defaults["default_dataset"])
+    )
+    snapshots = load_resolved_snapshots(dataset_path)
+    config = improvement_config_with_population(
+        population_size=args.population_size,
+        train_size=args.train_size,
+        validation_size=args.validation_size,
+    )
+    summary = run_forecast_owned_ratchet(dataset_path, config=config)
+    payload = {
+        **summary.to_dict(),
+        "num_snapshots": len(snapshots),
+    }
+    if args.output:
+        output_path = _resolve_cli_path(args.output)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    print(json.dumps(payload, indent=2, sort_keys=True))
 
 
 def build_parser() -> argparse.ArgumentParser:
@@ -218,9 +238,11 @@ def build_parser() -> argparse.ArgumentParser:
     learn_tune.set_defaults(func=command_learn_tune)
 
     learn_improve = learn_subparsers.add_parser("improve", help="Run full improvement loop")
-    learn_improve.add_argument("--config", help="Current strategy config JSON file")
-    learn_improve.add_argument("--log-dir", help="Directory containing trade logs")
-    learn_improve.add_argument("--auto-save", action="store_true", help="Auto-save improved config")
+    learn_improve.add_argument("--dataset", help="Resolved-market dataset JSON file")
+    learn_improve.add_argument("--population-size", type=int, default=5, help="Population size per fold")
+    learn_improve.add_argument("--train-size", type=int, default=3, help="Train windows or groups per fold")
+    learn_improve.add_argument("--validation-size", type=int, default=1, help="Validation windows or groups per fold")
+    learn_improve.add_argument("--output", help="Optional JSON path for the ratchet summary")
     learn_improve.set_defaults(func=command_learn_improve)
 
     return parser

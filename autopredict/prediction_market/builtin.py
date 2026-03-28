@@ -84,6 +84,7 @@ def create_default_registry() -> StrategyRegistry:
 
     from autopredict.domains.finance import FinanceSpecialistStrategy
     from autopredict.domains.politics import PoliticsSpecialistStrategy
+    from autopredict.domains.router import RoutedSpecialistStrategy
     from autopredict.domains.weather import WeatherSpecialistStrategy
 
     registry = StrategyRegistry()
@@ -110,5 +111,11 @@ def create_default_registry() -> StrategyRegistry:
         factory=PoliticsSpecialistStrategy,
         description="Simple polling- and event-aware politics specialist heuristic.",
         tags=("domain", "politics", "phase2"),
+    )
+    registry.register(
+        "routed_specialist",
+        factory=RoutedSpecialistStrategy,
+        description="Routes markets to question-conditioned specialist models by domain/category.",
+        tags=("domain", "routing", "phase3"),
     )
     return registry

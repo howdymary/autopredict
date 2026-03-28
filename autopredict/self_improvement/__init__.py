@@ -14,6 +14,12 @@ from autopredict.self_improvement.mutation import (
     StrategyGenome,
     StrategyMutator,
 )
+from autopredict.self_improvement.ratchet import (
+    ForecastRatchetSummary,
+    default_forecast_owned_genome,
+    improvement_config_with_population,
+    run_forecast_owned_ratchet,
+)
 from autopredict.self_improvement.selection import (
     CandidateEvaluation,
     SelectionConfig,
@@ -23,9 +29,13 @@ from autopredict.self_improvement.selection import (
 
 __all__ = [
     "CandidateEvaluation",
+    "default_forecast_owned_genome",
+    "ForecastRatchetSummary",
     "ImprovementCycleReport",
     "ImprovementLoopConfig",
+    "improvement_config_with_population",
     "MutationConfig",
+    "run_forecast_owned_ratchet",
     "SelectionConfig",
     "SelectionOutcome",
     "SelfImprovementLoop",

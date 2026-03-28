@@ -148,7 +148,8 @@ class MarketState:
     @property
     def time_to_expiry_hours(self) -> float:
         """Hours until market expiry."""
-        delta = self.expiry - datetime.now()
+        now = datetime.now(self.expiry.tzinfo) if self.expiry.tzinfo is not None else datetime.now()
+        delta = self.expiry - now
         return max(0.0, delta.total_seconds() / 3600)
 
 

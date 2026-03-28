@@ -40,6 +40,12 @@ python -m autopredict.cli score-latest
 
 The editable install pulls in the package runtime dependencies, including `PyYAML` for configuration loading.
 
+If you want the live Polymarket adapter boundary as well, install the optional extra in an environment that supports the official client:
+
+```bash
+python -m pip install -e ".[polymarket]"
+```
+
 Example output:
 
 ```json
@@ -120,6 +126,14 @@ The goal is a simple improvement loop: generate variants, evaluate them, keep th
 
 The default family holdout key is `category`, which uses raw category metadata when available and falls back to `MarketState.category`. Regime splits can either use explicit labels such as `metadata.regime` or auto-bucket market conditions like spread and liquidity.
 
+The package-native ratchet now has a forecast-owned path as well:
+
+```bash
+python -m autopredict.cli learn improve --dataset datasets/sample_markets.json
+```
+
+That path converts resolved datasets into scaffold snapshots without leaking `fair_prob` into strategy inputs, routes markets through question-conditioned specialist models, and then mutates execution policy around those agent-generated forecasts.
+
 ## Domain specialization
 
 Phase 1 adds the evidence and labeling contract, Phase 2 threads that contract into scaffold-native specialist strategies, Phase 3 swaps the heuristic signal logic for lightweight learned question-conditioned models, Phase 4 adds offline train/calibration/evaluation datasets for those defaults, and Phase 5 versions those datasets and attaches model report cards so promotion can compare lineage and held-out quality together:
@@ -172,7 +186,9 @@ Most useful guides:
 - [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)
 - [docs/fair_prob_guidelines.md](docs/fair_prob_guidelines.md)
 
-Historical design notes, phase summaries, and internal reports live under [docs/archive](docs/archive).
+The repo intentionally keeps only the active documentation surface in-tree. Older phase reports,
+one-off analyses, and prompt artifacts were trimmed to keep the public repo compact; rely on
+[docs/archive/README.md](docs/archive/README.md) plus git history if you need provenance.
 
 ## Scope today
 
@@ -192,7 +208,7 @@ Good today:
 Intentionally limited today:
 
 - live trading is disabled by default
-- exchange integrations are still scaffolding
+- the new Polymarket adapter supports real public market discovery and authenticated order-submission plumbing, but the full autonomous live loop is still conservative and incomplete
 - autonomous self-editing is not part of the runtime yet
 - promotion is still deterministic and offline; it supports chronological, regime, and family holdouts, but not live evaluation
 - domain-specialist strategies are question-conditioned and calibrated on offline held-out datasets, but still offline rather than live-data-driven

@@ -10,6 +10,7 @@ from autopredict.domains import (
     FinanceSpecialistStrategy,
     PoliticsDomainAdapter,
     PoliticsSpecialistStrategy,
+    RoutedSpecialistStrategy,
     WeatherDomainAdapter,
     WeatherSpecialistStrategy,
 )
@@ -99,3 +100,28 @@ def test_domain_specialists_trade_from_domain_bundles_in_backtests() -> None:
         assert result.trades[0].metadata["regime"] == bundle.metadata["regime"]
         assert result.trades[0].metadata["strategy"] == strategy.name
         assert result.trades[0].metadata["model"].endswith("_question_conditioned")
+
+
+def test_routed_strategy_dispatches_weather_markets_to_weather_specialist() -> None:
+    """Weather-labeled markets should use the weather specialist rather than generic fallback."""
+
+    bundle = WeatherDomainAdapter.from_fixtures().build_bundle()
+    venue = VenueConfig(name=VenueName.POLYMARKET, fee_bps=10.0)
+    backtester = PredictionMarketBacktester()
+
+    result = backtester.run(
+        PredictionMarketAgent(strategy=RoutedSpecialistStrategy()),
+        (
+            ResolvedMarketSnapshot(
+                market=_market("weather-routed", MarketCategory.SCIENCE, 0.39),
+                venue=venue,
+                outcome=1,
+                metadata={"source": "fixture"},
+                domain_bundle=bundle,
+            ),
+        ),
+    )
+
+    assert result.decisions[0].status == DecisionStatus.TRADE
+    assert result.forecasts[0].metadata["domain"] == "weather"
+    assert result.trades[0].metadata["strategy"] == "weather_specialist"

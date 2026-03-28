@@ -142,8 +142,12 @@ Before running live trading:
    venue:
      mode: live                        # CRITICAL: Must be "live"
      api_key: ${POLYMARKET_API_KEY}   # Loaded from environment
+     api_secret: ${POLYMARKET_API_SECRET}
      testnet: false                    # Set to true for testnet
    ```
+
+   For authenticated Polymarket trading you also need:
+   `POLYMARKET_API_PASSPHRASE`, `POLYMARKET_PRIVATE_KEY`, and `POLYMARKET_FUNDER`.
 
 4. **IMPORTANT: Add to .gitignore**
    ```bash
@@ -163,8 +167,8 @@ python scripts/run_live.py --config configs/live_trading.yaml --dry-run
 
 This validates:
 - Configuration is correct
-- Environment variables are set
-- API credentials are loaded
+- Risk limits are sane for live mode
+- Missing credential env vars are surfaced without blocking the dry run
 - Risk limits are reasonable
 
 **Step 2: Live Run**

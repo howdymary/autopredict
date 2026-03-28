@@ -6,6 +6,7 @@ import random
 from dataclasses import dataclass, field
 from typing import Any
 
+from autopredict.domains import RoutedSpecialistStrategy, SpecialistOrderPolicy
 from autopredict.prediction_market import (
     AgentRunConfig,
     LegacyMispricedStrategyAdapter,
@@ -24,6 +25,7 @@ class StrategyGenome:
     """Serializable parameter set for one strategy variant."""
 
     name: str
+    strategy_kind: str = "legacy_mispriced"
     kelly_fraction: float = 0.25
     aggressive_edge_threshold: float = 0.15
     min_spread_capture: float = 10.0
@@ -33,10 +35,20 @@ class StrategyGenome:
     max_leverage: float = 2.0
     min_edge_threshold: float = 0.05
     min_confidence: float = 0.70
+    max_bankroll_fraction: float = 0.05
     metadata: dict[str, Any] = field(default_factory=dict)
 
-    def build_strategy(self) -> LegacyMispricedStrategyAdapter:
+    def build_strategy(self):
         """Construct the scaffold bridge strategy for this genome."""
+
+        if self.strategy_kind == "routed_question_model":
+            return RoutedSpecialistStrategy(
+                policy=SpecialistOrderPolicy(
+                    min_abs_edge=self.min_edge_threshold,
+                    max_bankroll_fraction=self.max_bankroll_fraction,
+                    aggressive_edge=self.aggressive_edge_threshold,
+                )
+            )
 
         strategy = MispricedProbabilityStrategy(
             risk_limits=RiskLimits(
@@ -69,6 +81,7 @@ class StrategyGenome:
 
         return {
             "name": self.name,
+            "strategy_kind": self.strategy_kind,
             "kelly_fraction": self.kelly_fraction,
             "aggressive_edge_threshold": self.aggressive_edge_threshold,
             "min_spread_capture": self.min_spread_capture,
@@ -78,6 +91,7 @@ class StrategyGenome:
             "max_leverage": self.max_leverage,
             "min_edge_threshold": self.min_edge_threshold,
             "min_confidence": self.min_confidence,
+            "max_bankroll_fraction": self.max_bankroll_fraction,
             "metadata": dict(self.metadata),
         }
 
@@ -133,6 +147,7 @@ class StrategyMutator:
         step = self.config.relative_step
         return StrategyGenome(
             name=f"{base.name}_{label}",
+            strategy_kind=base.strategy_kind,
             kelly_fraction=_clamp(base.kelly_fraction * (1.0 + direction * step), 0.05, 1.0),
             aggressive_edge_threshold=_clamp(
                 base.aggressive_edge_threshold * (1.0 - direction * step * 0.5),
@@ -174,6 +189,11 @@ class StrategyMutator:
                 0.50,
                 0.99,
             ),
+            max_bankroll_fraction=_clamp(
+                base.max_bankroll_fraction * (1.0 + direction * step * 0.5),
+                0.01,
+                0.25,
+            ),
             metadata={"parent": base.name, "mutation": label},
         )
 
@@ -189,6 +209,7 @@ class StrategyMutator:
 
         return StrategyGenome(
             name=f"{base.name}_mutant_{index:02d}",
+            strategy_kind=base.strategy_kind,
             kelly_fraction=perturb(base.kelly_fraction, 0.05, 1.0),
             aggressive_edge_threshold=perturb(base.aggressive_edge_threshold, 0.02, 0.50),
             min_spread_capture=perturb(base.min_spread_capture, 0.0, 100.0),
@@ -198,5 +219,6 @@ class StrategyMutator:
             max_leverage=perturb(base.max_leverage, 1.0, 5.0),
             min_edge_threshold=perturb(base.min_edge_threshold, 0.01, 0.30),
             min_confidence=perturb(base.min_confidence, 0.50, 0.99),
+            max_bankroll_fraction=perturb(base.max_bankroll_fraction, 0.01, 0.25),
             metadata={"parent": base.name, "mutation": "stochastic", "index": index},
         )

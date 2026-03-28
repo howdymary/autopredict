@@ -7,6 +7,10 @@ from autopredict.evaluation.backtest import (
     PredictionMarketBacktester,
     ResolvedMarketSnapshot,
 )
+from autopredict.evaluation.datasets import (
+    load_resolved_snapshots,
+    snapshot_questions,
+)
 from autopredict.evaluation.domain_slices import (
     DomainSliceSummary,
     summarize_backtest_slices,
@@ -28,10 +32,12 @@ __all__ = [
     "CalibrationSummary",
     "DomainSliceSummary",
     "ExecutionAssumptions",
+    "load_resolved_snapshots",
     "PredictionMarketBacktester",
     "ProperScoringRules",
     "ResolvedMarketSnapshot",
     "ScoringReport",
+    "snapshot_questions",
     "summarize_backtest_slices",
     "summarize_domain_slices",
 ]

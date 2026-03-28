@@ -402,7 +402,7 @@ python -m autopredict.cli backtest --config strategy_configs/baseline.json
 
 #### 1. Overfitting to Sample Data
 
-**Problem**: Strategy performs well on sample_markets.json but fails on new data
+**Problem**: Strategy performs well on your dataset but fails on new data
 
 **Solution**:
 - Test on multiple datasets
@@ -411,7 +411,7 @@ python -m autopredict.cli backtest --config strategy_configs/baseline.json
 
 ```bash
 # Generate new test dataset
-python scripts/generate_dataset.py --num-markets 100 --output datasets/test_markets.json
+# Collect real market data via predict.py or the Polymarket adapter
 
 # Test on new data
 python -m autopredict.cli backtest --dataset datasets/test_markets.json

@@ -75,7 +75,7 @@ with open('strategy_configs/baseline.json') as f:
 1. Check edge is present in dataset:
 ```python
 import json
-with open('datasets/sample_markets.json') as f:
+with open('datasets/markets.json') as f:
     data = json.load(f)
     for market in data:
         edge = market['fair_prob'] - market['market_prob']
@@ -506,7 +506,7 @@ AutoPredictAgent.evaluate_market = debug_evaluate
 
 metrics = run_backtest(
     config_path="strategy_configs/baseline.json",
-    dataset_path="datasets/sample_markets.json"
+    dataset_path="datasets/markets.json"
 )
 ```
 

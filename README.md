@@ -1,20 +1,6 @@
 # AutoPredict
 
-AutoPredict is a framework for iteratively improving prediction market trading agents.
-
-It keeps the market simulator fixed, the trading logic mutable, and the iteration loop tight:
-
-1. run a backtest
-2. inspect forecast, PnL, and execution metrics
-3. change one config or strategy decision
-4. rerun and compare
-
-## What makes it useful
-
-- Fixed evaluation environment: order book simulation, execution quality, and scoring stay stable across experiments.
-- Mutable strategy surface: you can evolve the agent through `agent.py` and `strategy_configs/*.json`.
-- Execution-aware metrics: the framework treats slippage, fill rate, and market impact as first-class, not afterthoughts.
-- Lightweight local workflow: no runtime dependencies beyond the Python standard library.
+AutoPredict is a framework for prediction market trading agents. It connects to live Polymarket data, lets you supply your own probability estimates, and evaluates trade opportunities with execution-aware metrics.
 
 ## Quick start
 
@@ -23,89 +9,59 @@ git clone https://github.com/howdymary/autopredict.git
 cd autopredict
 python -m pip install -e .
 
-python -m autopredict.cli backtest
-python -m autopredict.cli score-latest
+# Scan live markets
+python predict.py
+
+# Find structural edges in multi-outcome events
+python predict.py --events
+
+# Test your own prediction on a specific market
+python predict.py --fair 0.60 <condition_id>
 ```
 
-Example output:
+See [QUICKSTART.md](QUICKSTART.md) for a full walkthrough.
 
-```json
-{
-  "total_pnl": 23.848357929641246,
-  "sharpe": 7.667475056377162,
-  "brier_score": 0.25475000000000003,
-  "fill_rate": 0.4420699362191731,
-  "num_trades": 4.0,
-  "agent_feedback": {
-    "weakness": "calibration",
-    "hypothesis": "Forecasts are too confident relative to realized outcomes."
-  }
-}
-```
+## What it does
 
-To run your first full iteration, start with [QUICKSTART.md](QUICKSTART.md).
+- **Live market scanning**: Fetches active markets and real order books from Polymarket (no auth needed for reads)
+- **Event-level analysis**: Finds multi-outcome events where sibling prices don't sum to 1.0 (structural mispricing)
+- **Execution-aware agent**: Given your `fair_prob`, evaluates edge, spread, liquidity, and book depth before recommending a trade
+- **Configurable strategy**: All agent parameters are JSON-tunable (edge thresholds, risk limits, sizing)
+- **Backtesting engine**: Test strategy changes against market data with slippage and fill rate simulation
 
 ## Core pieces
 
-- [market_env.py](market_env.py): order books, execution simulation, and evaluation metrics
-- [agent.py](agent.py): the mutable baseline agent
-- [run_experiment.py](run_experiment.py): the backtest loop
-- [autopredict/cli.py](autopredict/cli.py): packaged command-line entrypoint
-- [strategy_configs](strategy_configs): tunable strategy parameters
-- [datasets](datasets): sample market snapshots
-- [tests](tests): automated regression coverage
+- [predict.py](predict.py): Live market scanner and agent runner — the main entry point
+- [agent.py](agent.py): The mutable trading agent
+- [market_env.py](market_env.py): Order book simulation and execution metrics
+- [autopredict/markets/polymarket.py](autopredict/markets/polymarket.py): Polymarket API adapter (Gamma + CLOB)
+- [strategy_configs](strategy_configs): Tunable strategy parameters
+- [run_experiment.py](run_experiment.py): Backtest loop for offline evaluation
 
 ## What it measures
 
-AutoPredict reports three groups of metrics:
+Three groups of metrics:
 
-- Epistemic: `brier_score`, `calibration_by_bucket`
-- Financial: `total_pnl`, `sharpe`, `max_drawdown`, `win_rate`
-- Execution: `avg_slippage_bps`, `fill_rate`, `market_impact_bps`, `implementation_shortfall_bps`
-
-The framework also returns `agent_feedback`, a short diagnosis of the current bottleneck:
-
-- `execution_quality`
-- `limit_fill_quality`
-- `calibration`
-- `risk`
-- `selection`
+- **Epistemic**: `brier_score`, `calibration_by_bucket`
+- **Financial**: `total_pnl`, `sharpe`, `max_drawdown`, `win_rate`
+- **Execution**: `avg_slippage_bps`, `fill_rate`, `market_impact_bps`, `implementation_shortfall_bps`
 
 ## Documentation
 
-Start here:
-
 - [QUICKSTART.md](QUICKSTART.md)
-- [docs/README.md](docs/README.md)
-
-Most useful guides:
-
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - [docs/STRATEGIES.md](docs/STRATEGIES.md)
 - [docs/BACKTESTING.md](docs/BACKTESTING.md)
 - [docs/METRICS.md](docs/METRICS.md)
-- [docs/LEARNING.md](docs/LEARNING.md)
-- [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)
-- [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)
 - [docs/fair_prob_guidelines.md](docs/fair_prob_guidelines.md)
+- [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)
+- [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)
 
-Historical design notes, phase summaries, and internal reports live under [docs/archive](docs/archive).
+## Design philosophy
 
-## Scope today
+The agent does NOT generate predictions. It optimizes execution given your forecast. If you think a market is at 54% and should be at 60%, the agent decides whether to trade, how much, and what order type — based on spread, depth, and your risk limits.
 
-Good today:
-
-- local backtesting
-- strategy and config iteration
-- packaged CLI from a repo checkout or installed wheel
-- execution-aware metrics
-- test coverage for core components
-
-Intentionally limited today:
-
-- live trading is disabled by default
-- exchange integrations are still scaffolding
-- autonomous self-editing is not part of the runtime
+The forecasting is your job. The execution is the agent's job.
 
 ## License
 

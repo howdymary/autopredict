@@ -132,23 +132,13 @@ def command_learn_analyze(args: argparse.Namespace) -> None:
 
 def command_learn_tune(args: argparse.Namespace) -> None:
     """Tune strategy parameters via grid search."""
-    print("Parameter tuning requires full backtest integration.")
-    print("Use scripts/learn_and_improve.py for advanced tuning workflows.")
-    print(f"\nExample:")
-    print(f"  python scripts/learn_and_improve.py tune \\")
-    print(f"    --config {args.config or 'strategy_configs/default.json'} \\")
-    print(f"    --output configs/strategy_tuned.json")
-
+    print("Parameter tuning requires a dataset of real market snapshots.")
+    print("Use the autopredict.learning.tuner.GridSearchTuner API to sweep configs.")
 
 def command_learn_improve(args: argparse.Namespace) -> None:
     """Run full improvement loop."""
-    print("Full improvement loop requires complete backtest integration.")
-    print("Use scripts/learn_and_improve.py for the complete workflow.")
-    print(f"\nExample:")
-    print(f"  python scripts/learn_and_improve.py improve \\")
-    print(f"    --config {args.config or 'strategy_configs/default.json'} \\")
-    print(f"    --log-dir state/trades \\")
-    print(f"    --auto-save")
+    print("Improvement loop requires a dataset of real market snapshots.")
+    print("Collect data via predict.py, then use GridSearchTuner to iterate.")
 
 
 def build_parser() -> argparse.ArgumentParser:

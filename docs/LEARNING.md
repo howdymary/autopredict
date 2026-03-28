@@ -354,7 +354,7 @@ param_grid = {
     "max_risk_fraction": [0.01, 0.015, 0.02, 0.025]
 }
 
-best = grid_search(param_grid, "datasets/sample_markets.json")
+best = grid_search(param_grid, "datasets/markets.json")
 ```
 
 **Warning**: Grid search with N parameters and K values each requires K^N backtests. Use sparingly.
@@ -388,7 +388,7 @@ def bayesian_optimize(param_bounds: dict, n_iterations: int = 50):
         }
 
         # Evaluate
-        metrics = run_backtest(params, "datasets/sample_markets.json")
+        metrics = run_backtest(params, "datasets/markets.json")
         sharpe = metrics["sharpe"]
 
         X_observed.append([params[name] for name in param_names])
@@ -405,7 +405,7 @@ def bayesian_optimize(param_bounds: dict, n_iterations: int = 50):
 
         # Evaluate
         params = dict(zip(param_names, next_params))
-        metrics = run_backtest(params, "datasets/sample_markets.json")
+        metrics = run_backtest(params, "datasets/markets.json")
         sharpe = metrics["sharpe"]
 
         # Update

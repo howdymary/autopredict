@@ -22,7 +22,7 @@ from .analysis import PerformanceAnalyzer
 
 def run_backtest_command(
     strategy: str = "mispriced_probability",
-    data: str | Path = "datasets/sample_markets_100.json",
+    data: str | Path = "datasets/markets.json",
     config: str | Path | None = None,
     out: str | Path = "results/backtest.json",
     bankroll: float = 1000.0,

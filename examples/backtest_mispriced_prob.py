@@ -9,7 +9,7 @@ This script demonstrates how to:
 
 Usage:
     python examples/backtest_mispriced_prob.py
-    python examples/backtest_mispriced_prob.py --data datasets/sample_markets_500.json
+    python examples/backtest_mispriced_prob.py --data datasets/markets.json
     python examples/backtest_mispriced_prob.py --config configs/aggressive.json --out results/
 """
 
@@ -41,7 +41,7 @@ def main():
     parser.add_argument(
         "--data",
         type=str,
-        default="datasets/sample_markets_100.json",
+        default="datasets/markets.json",
         help="Path to market data JSON file",
     )
     parser.add_argument(

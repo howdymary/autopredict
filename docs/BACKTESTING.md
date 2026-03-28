@@ -55,7 +55,7 @@ python -m autopredict.cli backtest
 
 This uses:
 - Config: `strategy_configs/baseline.json`
-- Dataset: `datasets/sample_markets.json`
+- Dataset: `datasets/markets.json (supply your own)`
 - Bankroll: `1000.0` (from `config.json`)
 
 ### Custom Config
@@ -100,7 +100,7 @@ config = AgentConfig(
 # Run backtest
 metrics = run_backtest(
     config=config,
-    dataset_path="datasets/sample_markets.json",
+    dataset_path="datasets/markets.json (supply your own)",
     starting_bankroll=1000.0
 )
 
@@ -269,7 +269,7 @@ The `agent_feedback` field identifies the dominant weakness:
 
 ### Pitfall 1: Overfitting to Sample Data
 
-**Symptom**: Great performance on `sample_markets.json`, poor on new data
+**Symptom**: Great performance on `your dataset`, poor on new data
 
 **Causes**:
 - Tuning parameters to fit specific markets
@@ -284,10 +284,10 @@ The `agent_feedback` field identifies the dominant weakness:
 
 ```bash
 # Generate new test set
-python scripts/generate_dataset.py --num-markets 100 --output datasets/test_set.json
+# Collect real market data via predict.py or the Polymarket adapter
 
 # Test on both
-python -m autopredict.cli backtest --dataset datasets/sample_markets.json
+python -m autopredict.cli backtest --dataset datasets/markets.json (supply your own)
 python -m autopredict.cli backtest --dataset datasets/test_set.json
 
 # Performance should be similar

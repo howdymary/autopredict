@@ -1,6 +1,6 @@
 # AutoPredict Quick Start
 
-This walkthrough gets you from clone to your first strategy iteration.
+This walkthrough gets you from clone to scanning real Polymarket data.
 
 ## 1. Install
 
@@ -10,99 +10,65 @@ cd autopredict
 python -m pip install -e .
 ```
 
-Editable install is recommended so package imports and CLI behavior match what you see in the repo.
-
-## 2. Run the baseline backtest
+## 2. Scan live markets
 
 ```bash
-python -m autopredict.cli backtest
+python predict.py
 ```
 
-This command uses:
+This fetches active markets from Polymarket's Gamma API, pulls real order books from the CLOB, and shows you price, spread, depth, and volume for each market.
 
-- `strategy_configs/baseline.json`
-- `datasets/sample_markets.json`
-- `strategy.md`
+```bash
+python predict.py --top 5 --verbose    # show fewer markets with detail
+python predict.py --category politics   # filter by category
+python predict.py --min-liquidity 5000  # only liquid markets
+```
 
-It simulates the sample markets, prints the metrics, and saves a timestamped `metrics.json` under `state/backtests/`.
+## 3. Find structural edges in multi-outcome events
 
-Example output:
+```bash
+python predict.py --events
+```
+
+Shows events where sibling market prices should sum to ~1.0. If they don't, the gap is a real structural edge.
+
+## 4. Test your own prediction
+
+If you think a market is mispriced, supply your probability estimate:
+
+```bash
+python predict.py --fair 0.60 <condition_id>
+```
+
+This fetches the real market + order book, computes the edge, and runs the AutoPredict agent to give you a trade recommendation (side, size, order type, limit price).
+
+## 5. Iterate on the agent config
+
+Open `strategy_configs/baseline.json` and change one parameter:
 
 ```json
 {
-  "total_pnl": 23.848357929641246,
-  "sharpe": 7.667475056377162,
-  "brier_score": 0.25475000000000003,
-  "fill_rate": 0.4420699362191731,
-  "num_trades": 4.0,
-  "agent_feedback": {
-    "weakness": "calibration",
-    "hypothesis": "Forecasts are too confident relative to realized outcomes."
-  }
-}
-```
-
-## 3. Read the key fields
-
-Use these as your first pass:
-
-- `sharpe`: quality of returns relative to volatility
-- `brier_score`: quality of forecast calibration
-- `avg_slippage_bps`: execution cost
-- `fill_rate`: how much of requested size actually filled
-- `agent_feedback`: the framework’s best guess at the next improvement target
-
-## 4. Inspect the latest run
-
-```bash
-python -m autopredict.cli score-latest
-```
-
-This loads the newest `metrics.json` from `state/backtests/`.
-
-## 5. Make one change
-
-Open `strategy_configs/baseline.json` and change one parameter only.
-
-Example:
-
-```json
-{
-  "name": "baseline_execution_aware",
   "min_edge": 0.08,
   "aggressive_edge": 0.16,
   "max_risk_fraction": 0.015
 }
 ```
 
-Then rerun:
-
-```bash
-python -m autopredict.cli backtest --config strategy_configs/baseline.json
-```
+Then re-run `predict.py --fair` to see how the agent's recommendation changes.
 
 That is the core loop:
 
-1. change one thing
-2. rerun
-3. compare metrics
-4. keep or revert
+1. find a market you have an opinion on
+2. supply your fair_prob
+3. see what the agent recommends
+4. adjust config if the recommendation doesn't match your conviction
+5. repeat
 
 ## 6. Pick the next guide
 
-- Forecast quality looks weak: [docs/fair_prob_guidelines.md](docs/fair_prob_guidelines.md)
-- Execution looks weak: [docs/BACKTESTING.md](docs/BACKTESTING.md)
-- Sizing or stability looks weak: [docs/METRICS.md](docs/METRICS.md)
-- You want strategy ideas: [docs/STRATEGIES.md](docs/STRATEGIES.md)
-- You want the system overview: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+- Forecast quality: [docs/fair_prob_guidelines.md](docs/fair_prob_guidelines.md)
+- Execution tuning: [docs/BACKTESTING.md](docs/BACKTESTING.md)
+- Metrics explained: [docs/METRICS.md](docs/METRICS.md)
+- Strategy ideas: [docs/STRATEGIES.md](docs/STRATEGIES.md)
+- System overview: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - Something broke: [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)
-
-## Smoke checks
-
-```bash
-pytest -q
-python -m autopredict.cli backtest
-python -m autopredict.cli score-latest
-```
-
-If you want the broader map of the project after this, open [docs/README.md](docs/README.md).

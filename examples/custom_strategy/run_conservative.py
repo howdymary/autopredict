@@ -18,7 +18,7 @@ def run_comparison():
     """Run both baseline and conservative agents, compare results."""
 
     config_path = Path(__file__).parent.parent.parent / "strategy_configs" / "baseline.json"
-    dataset_path = Path(__file__).parent.parent.parent / "datasets" / "sample_markets.json"
+    dataset_path = Path(__file__).parent.parent.parent / "datasets" / "markets.json"
     guidance_path = Path(__file__).parent.parent.parent / "strategy.md"
 
     print("="*80)

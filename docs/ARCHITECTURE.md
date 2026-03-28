@@ -218,7 +218,7 @@ Configures the AgentConfig for one experiment:
 ```json
 {
   "default_strategy_config": "strategy_configs/baseline.json",
-  "default_dataset": "datasets/sample_markets.json",
+  "default_dataset": null,
   "strategy_guidance": "strategy.md",
   "state_dir": "state/backtests",
   "starting_bankroll": 1000.0,

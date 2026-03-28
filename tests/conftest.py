@@ -25,10 +25,36 @@ def datasets_path(base_path: Path) -> Path:
 
 
 @pytest.fixture
-def sample_markets(datasets_path: Path) -> list[dict[str, Any]]:
-    """Load sample markets from minimal test dataset."""
-    with open(datasets_path / "test_markets_minimal.json") as f:
-        return json.load(f)
+def sample_markets() -> list[dict[str, Any]]:
+    """Minimal market fixtures for testing validation logic."""
+    return [
+        {
+            "market_id": "test-politics-001",
+            "category": "politics",
+            "market_prob": 0.44,
+            "fair_prob": 0.52,
+            "outcome": 1,
+            "time_to_expiry_hours": 240.0,
+            "next_mid_price": 0.49,
+            "order_book": {
+                "bids": [[0.43, 180.0], [0.42, 220.0]],
+                "asks": [[0.45, 160.0], [0.46, 210.0]],
+            },
+        },
+        {
+            "market_id": "test-macro-001",
+            "category": "macro",
+            "market_prob": 0.61,
+            "fair_prob": 0.54,
+            "outcome": 0,
+            "time_to_expiry_hours": 96.0,
+            "next_mid_price": 0.57,
+            "order_book": {
+                "bids": [[0.60, 150.0], [0.59, 200.0]],
+                "asks": [[0.62, 140.0], [0.63, 190.0]],
+            },
+        },
+    ]
 
 
 @pytest.fixture

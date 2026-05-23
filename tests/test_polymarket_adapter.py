@@ -87,7 +87,7 @@ def test_get_markets_uses_live_shaped_market_payload(monkeypatch: pytest.MonkeyP
     adapter = PolymarketAdapter()
 
     def fake_request(method, url, params=None, payload=None):
-        del method, params, payload
+        del method, payload
         if url.endswith("/markets"):
             return [RAW_MARKET]
         if url.endswith("/book"):
@@ -108,6 +108,52 @@ def test_get_markets_uses_live_shaped_market_payload(monkeypatch: pytest.MonkeyP
     assert market.metadata["yes_token_id"] == "yes-token"
     assert market.metadata["no_token_id"] == "no-token"
     assert market.category.value == "politics"
+
+
+def test_get_markets_skips_payloads_with_missing_live_fields(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    adapter = PolymarketAdapter()
+
+    def fake_request(method, url, params=None, payload=None):
+        del method, payload
+        if url.endswith("/markets"):
+            if params and params.get("offset", 0) > 0:
+                return []
+            return [
+                {**RAW_MARKET, "conditionId": "missing-price", "outcomePrices": []},
+                {**RAW_MARKET, "conditionId": "missing-binary", "outcomes": '["Alice", "Bob"]'},
+            ]
+        if url.endswith("/book"):
+            return {"bids": [], "asks": []}
+        raise AssertionError(f"unexpected url {url}")
+
+    monkeypatch.setattr(adapter, "_request_json", fake_request)
+
+    assert adapter.get_markets({"limit": 2}) == []
+
+
+def test_market_order_requires_live_ask(monkeypatch: pytest.MonkeyPatch) -> None:
+    adapter = PolymarketAdapter(
+        api_key="key",
+        api_secret="secret",
+        api_passphrase="passphrase",
+        private_key="private",
+        funder="0xfunder",
+        trading_client=FakeTradingClient(),
+    )
+    monkeypatch.setattr(adapter, "_find_raw_market", lambda market_id: RAW_MARKET)
+    monkeypatch.setattr(adapter, "_get_order_book", lambda token_id: {"bids": [], "asks": []})
+
+    order = Order(
+        market_id=f"polymarket-{RAW_MARKET['conditionId']}",
+        side="buy",
+        order_type="market",
+        size=10.0,
+    )
+
+    with pytest.raises(ValueError, match="missing executable asks"):
+        adapter.place_order(order)
 
 
 def test_validate_credentials_respects_dry_run_placeholders() -> None:

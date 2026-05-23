@@ -11,6 +11,7 @@ from __future__ import annotations
 import dataclasses
 import hashlib
 import json
+import math
 import os
 import subprocess
 import tempfile
@@ -73,6 +74,34 @@ def discover_git_sha(repo_root: str | Path | None = None) -> str | None:
     return sha or None
 
 
+def discover_git_state(repo_root: str | Path | None = None) -> dict[str, Any] | None:
+    """Return reproducibility metadata for the current git checkout."""
+
+    cwd = Path(repo_root) if repo_root is not None else Path.cwd()
+    git_sha = discover_git_sha(cwd)
+    if git_sha is None:
+        return None
+
+    status = _run_git_text(cwd, "status", "--porcelain=v1", "--untracked-files=normal")
+    tracked_diff = _run_git_bytes(cwd, "diff", "--binary", "HEAD", "--")
+    untracked_files = _run_git_bytes(cwd, "ls-files", "--others", "--exclude-standard", "-z")
+    untracked_paths = sorted(
+        path for path in untracked_files.decode("utf-8", errors="replace").split("\0") if path
+    )
+
+    state: dict[str, Any] = {
+        "sha": git_sha,
+        "dirty": bool(status.strip()),
+        "status_porcelain": [line for line in status.splitlines() if line],
+    }
+    if tracked_diff:
+        state["tracked_diff_sha256"] = hashlib.sha256(tracked_diff).hexdigest()
+    if untracked_paths:
+        state["untracked_files"] = untracked_paths
+        state["untracked_manifest_sha256"] = _hash_untracked_manifest(cwd, untracked_paths)
+    return state
+
+
 def build_run_archive(
     run: Any,
     *,
@@ -93,9 +122,10 @@ def build_run_archive(
     if run_id:
         provenance["run_id"] = run_id
 
-    git_sha = discover_git_sha(repo_root)
-    if git_sha is not None:
-        provenance["git_sha"] = git_sha
+    git_state = discover_git_state(repo_root)
+    if git_state is not None:
+        provenance["git_sha"] = git_state["sha"]
+        provenance["git"] = git_state
 
     dependency_versions = collect_dependency_versions(dependency_names)
     if dependency_versions:
@@ -429,11 +459,12 @@ def _atomic_write_json(path: Path, payload: Mapping[str, Any]) -> None:
     )
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            json.dump(payload, handle, indent=2, sort_keys=True)
+            json.dump(payload, handle, allow_nan=False, indent=2, sort_keys=True)
             handle.write("\n")
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(temp_name, path)
+        _fsync_directory(path.parent)
     finally:
         if os.path.exists(temp_name):
             os.unlink(temp_name)
@@ -442,7 +473,11 @@ def _atomic_write_json(path: Path, payload: Mapping[str, Any]) -> None:
 def _json_ready(value: Any) -> Any:
     if isinstance(value, Enum):
         return value.value
-    if value is None or isinstance(value, (str, int, float, bool)):
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise ValueError("archives cannot contain non-finite numeric values")
+        return value
+    if value is None or isinstance(value, (str, int, bool)):
         return value
     if isinstance(value, (datetime, date)):
         return value.isoformat()
@@ -464,10 +499,65 @@ def _json_ready(value: Any) -> Any:
             for field in dataclasses.fields(value)
         }
     try:
-        json.dumps(value)
+        json.dumps(value, allow_nan=False)
     except TypeError:
         return repr(value)
     return value
+
+
+def _run_git_text(cwd: Path, *args: str) -> str:
+    try:
+        completed = subprocess.run(
+            ["git", *args],
+            cwd=cwd,
+            check=True,
+            capture_output=True,
+            text=True,
+        )
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        return ""
+    return completed.stdout
+
+
+def _run_git_bytes(cwd: Path, *args: str) -> bytes:
+    try:
+        completed = subprocess.run(
+            ["git", *args],
+            cwd=cwd,
+            check=True,
+            capture_output=True,
+        )
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        return b""
+    return completed.stdout
+
+
+def _hash_untracked_manifest(repo_root: Path, paths: Sequence[str]) -> str:
+    digest = hashlib.sha256()
+    for relative_path in paths:
+        path = repo_root / relative_path
+        digest.update(relative_path.encode("utf-8", errors="replace"))
+        digest.update(b"\0")
+        if path.is_file():
+            digest.update(dataset_sha256(path).encode("ascii"))
+        else:
+            digest.update(b"<non-file>")
+        digest.update(b"\n")
+    return digest.hexdigest()
+
+
+def _fsync_directory(path: Path) -> None:
+    try:
+        flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+        fd = os.open(path, flags)
+    except OSError:
+        return
+    try:
+        os.fsync(fd)
+    except OSError:
+        pass
+    finally:
+        os.close(fd)
 
 
 def _looks_like_walk_forward_report(value: Any) -> bool:

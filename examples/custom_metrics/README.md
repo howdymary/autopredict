@@ -21,8 +21,9 @@ This example also adds:
 ## Running the Example
 
 ```bash
-cd "/Users/howdymary/Documents/New project/autopredict"
-python3 examples/custom_metrics/run_with_custom_metrics.py
+cd autopredict
+python3 examples/custom_metrics/run_with_custom_metrics.py --dataset /path/to/real_resolved_markets.json
+python3 examples/custom_metrics/custom_metrics.py --trades /path/to/real_trade_records.jsonl
 ```
 
 ## Integration Approach

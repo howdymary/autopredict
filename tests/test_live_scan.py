@@ -133,6 +133,17 @@ def test_observed_market_parses_live_shaped_gamma_without_default_probability() 
     )
     assert missing_price.market_prob is None
 
+    non_binary = ObservedMarket.from_gamma(
+        {
+            **TEST_FIXTURE_GAMMA_MARKET,
+            "conditionId": "0xnonbinary",
+            "outcomes": ["Alice", "Bob"],
+            "outcomePrices": ["0.62", "0.38"],
+        }
+    )
+    assert non_binary.market_prob is None
+    assert non_binary.yes_token_id is None
+
 
 def test_scan_markets_uses_gamma_prices_and_real_clob_book_levels() -> None:
     client = FakePolymarketClient(
@@ -176,7 +187,7 @@ def test_scan_markets_keeps_book_fields_missing_when_clob_unavailable() -> None:
     assert "fixture CLOB outage" in str(report.book_error)
 
 
-def test_scan_events_reports_observed_sibling_sum_without_normalized_prices() -> None:
+def test_scan_events_reports_observed_sibling_sum_without_exclusivity_gap() -> None:
     client = FakePolymarketClient(event_pages=[[TEST_FIXTURE_EVENT]])
     scanner = LivePolymarketScanner(client=client)
 
@@ -188,8 +199,8 @@ def test_scan_events_reports_observed_sibling_sum_without_normalized_prices() ->
     assert report.market_count == 2
     assert report.priced_market_count == 2
     assert report.observed_probability_sum == pytest.approx(0.95)
-    assert report.deviation_from_one == pytest.approx(-0.05)
-    assert report.status == "observed_under_one"
+    assert report.status == "observed_sibling_prices_nonexclusive"
+    assert "deviation_from_one" not in report.to_dict()
     assert "fair" not in report.to_dict()
     assert "alpha" not in report.to_dict()
 
@@ -205,6 +216,7 @@ def test_event_formatter_avoids_fair_language() -> None:
     rendered = format_event_scan([report])
 
     assert "observed_yes_sum=0.950" in rendered
+    assert "gap_to_one" not in rendered
     assert "fair" not in rendered.lower()
     assert "alpha" not in rendered.lower()
 

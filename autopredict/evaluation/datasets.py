@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import datetime, timedelta, timezone
 import json
 from pathlib import Path
-from typing import Any, Sequence
+from typing import Any, Mapping, Sequence
 
 from autopredict.core.types import MarketCategory, MarketState
 from autopredict.evaluation.backtest import ResolvedMarketSnapshot
@@ -66,21 +66,18 @@ def load_resolved_snapshots(
         min_order_size=1.0,
         metadata={"source": str(dataset_path)},
     )
-    base_time = datetime(2026, 1, 1, tzinfo=timezone.utc)
     return tuple(
         _record_to_snapshot(
             record,
-            observed_at=base_time + timedelta(hours=index),
             venue=active_venue,
         )
-        for index, record in enumerate(records)
+        for record in records
     )
 
 
 def _record_to_snapshot(
     record: dict[str, Any],
     *,
-    observed_at: datetime,
     venue: VenueConfig,
 ) -> ResolvedMarketSnapshot:
     market_id = str(record["market_id"])
@@ -95,13 +92,26 @@ def _record_to_snapshot(
     best_ask = float(asks[0][0])
     bid_liquidity = sum(float(level[1]) for level in bids)
     ask_liquidity = sum(float(level[1]) for level in asks)
-    expiry = observed_at + timedelta(hours=float(record["time_to_expiry_hours"]))
+    observed_at = _parse_required_timestamp(
+        record,
+        ("observed_at", "observedAt", "timestamp"),
+        market_id=market_id,
+        field_label="observed_at",
+    )
+    expiry = _parse_optional_timestamp(record, ("expiry", "endDate", "end_date"))
+    if expiry is None:
+        if "time_to_expiry_hours" not in record:
+            raise ValueError(
+                f"Market {market_id} must include expiry/endDate or time_to_expiry_hours"
+            )
+        expiry = observed_at + timedelta(hours=float(record["time_to_expiry_hours"]))
 
     metadata = dict(record.get("metadata", {}))
     domain = _DOMAIN_BY_CATEGORY.get(category_name, "generic")
     market_family = category_name
     regime = _derive_regime(metadata)
-    question = str(record.get("question") or _generate_question(market_id))
+    question_source = "dataset" if record.get("question") else "market_id"
+    question = str(record.get("question") or market_id)
 
     market = MarketState(
         market_id=market_id,
@@ -121,6 +131,7 @@ def _record_to_snapshot(
             "market_family": market_family,
             "regime": regime,
             "feature_version": "resolved_dataset_v1",
+            "question_source": question_source,
         },
     )
     features = _build_snapshot_features(
@@ -135,6 +146,7 @@ def _record_to_snapshot(
         "feature_version": "resolved_dataset_v1",
         "category": category_name,
         "source_dataset": "resolved_markets",
+        "question_source": question_source,
     }
     merged_metadata.update(metadata)
 
@@ -193,16 +205,69 @@ def _derive_regime(metadata: dict[str, Any]) -> str:
     return time_tier if time_tier and time_tier != "unknown" else "steady"
 
 
-def _generate_question(market_id: str) -> str:
-    stem = market_id
-    suffix = stem.rsplit("-", 1)[-1]
-    if suffix.isdigit():
-        stem = stem.rsplit("-", 1)[0]
-    words = stem.replace("-", " ").strip()
-    return f"Will {words} resolve yes?"
+def _parse_required_timestamp(
+    record: Mapping[str, Any],
+    field_names: Sequence[str],
+    *,
+    market_id: str,
+    field_label: str,
+) -> datetime:
+    value = _first_present(record, field_names)
+    if value is None:
+        raise ValueError(f"Market {market_id} must include real {field_label}")
+    return _parse_timestamp_value(value, market_id=market_id, field_label=field_label)
+
+
+def _parse_optional_timestamp(
+    record: Mapping[str, Any],
+    field_names: Sequence[str],
+) -> datetime | None:
+    value = _first_present(record, field_names)
+    if value is None:
+        return None
+    return _parse_timestamp_value(value, market_id=str(record.get("market_id", "")), field_label="expiry")
+
+
+def _first_present(record: Mapping[str, Any], field_names: Sequence[str]) -> Any | None:
+    for field_name in field_names:
+        if field_name in record and record[field_name] not in (None, ""):
+            return record[field_name]
+    return None
+
+
+def _parse_timestamp_value(value: Any, *, market_id: str, field_label: str) -> datetime:
+    if isinstance(value, datetime):
+        timestamp = value
+    elif isinstance(value, (int, float)):
+        timestamp = datetime.fromtimestamp(float(value), tz=timezone.utc)
+    elif isinstance(value, str):
+        numeric_value = _parse_numeric_timestamp(value)
+        if numeric_value is not None:
+            timestamp = datetime.fromtimestamp(numeric_value, tz=timezone.utc)
+        else:
+            try:
+                timestamp = datetime.fromisoformat(value.replace("Z", "+00:00"))
+            except ValueError as exc:
+                raise ValueError(
+                    f"Market {market_id} has invalid {field_label}: {value!r}"
+                ) from exc
+    else:
+        raise ValueError(f"Market {market_id} has invalid {field_label}: {value!r}")
+
+    if timestamp.tzinfo is None:
+        timestamp = timestamp.replace(tzinfo=timezone.utc)
+    return timestamp.astimezone(timezone.utc)
+
+
+def _parse_numeric_timestamp(value: str) -> float | None:
+    try:
+        numeric = float(value)
+    except ValueError:
+        return None
+    return numeric
 
 
 def snapshot_questions(snapshots: Sequence[ResolvedMarketSnapshot]) -> tuple[str, ...]:
-    """Return the generated or explicit question strings for loaded snapshots."""
+    """Return the explicit question strings or raw market ids for loaded snapshots."""
 
     return tuple(snapshot.market.question for snapshot in snapshots)

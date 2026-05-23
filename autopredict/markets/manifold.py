@@ -1,268 +1,64 @@
-"""Manifold Markets adapter implementation.
+"""Explicitly unsupported Manifold Markets adapter scaffold.
 
-Manifold is a play-money prediction market platform with an active community.
-Good for testing strategies before deploying to real-money markets.
-
-API Documentation: https://docs.manifold.markets/api
+The repository does not currently maintain a verified Manifold API adapter.
+Failing closed is safer than shipping inferred API payload parsing or simulated
+venue behavior under a production adapter name.
 """
 
 from __future__ import annotations
 
-from datetime import datetime
-from typing import Any
-
-from autopredict.core.types import (
-    ExecutionReport,
-    MarketCategory,
-    MarketState,
-    Order,
-    OrderSide,
-    OrderType,
-)
+from autopredict.core.types import ExecutionReport, MarketState, Order
 
 
 class ManifoldAdapter:
-    """Adapter for Manifold Markets.
+    """Fail-closed scaffold for a future verified Manifold integration.
 
-    Manifold uses play money (mana) and has:
-    - Binary, multiple choice, and numeric markets
-    - Automated market maker (AMM) pricing
-    - Simple API with no authentication for reads
-    - API key required for trading
-
-    Example:
-        >>> adapter = ManifoldAdapter(api_key="your-api-key")
-        >>> markets = adapter.get_markets({"category": "politics"})
-        >>> for market in markets:
-        ...     print(f"{market.question}: {market.market_prob:.1%}")
+    Manifold is a play-money prediction market platform. AutoPredict keeps this
+    class as a named venue scaffold, but all public methods raise until a real
+    adapter is implemented and tested against live API responses.
     """
 
     def __init__(self, api_key: str | None = None):
-        """Initialize Manifold adapter.
-
-        Args:
-            api_key: Manifold API key (required for trading, optional for reads).
-        """
         self.api_key = api_key
         self.base_url = "https://api.manifold.markets/v0"
 
+    def _unsupported(self, operation: str) -> NotImplementedError:
+        return NotImplementedError(
+            f"Manifold {operation} is not implemented. "
+            "Implement and test against live Manifold API responses before enabling this venue."
+        )
+
     def get_markets(self, filters: dict | None = None) -> list[MarketState]:
-        """Fetch markets from Manifold.
+        """Fetch markets from Manifold."""
 
-        Manifold API returns markets with:
-        - question: Market question
-        - id: Unique identifier
-        - probability: Current probability (binary markets)
-        - pool: AMM liquidity pool
-        - volume24Hours: 24h trading volume
-        - createdTime: Market creation time
-        - closeTime: Market close time
-
-        Args:
-            filters: Optional filters:
-                - category: Market category (tag)
-                - min_liquidity: Minimum pool size
-                - min_volume: Minimum 24h volume
-                - binary_only: Only binary markets
-
-        Returns:
-            List of MarketState objects.
-
-        Example:
-            >>> markets = adapter.get_markets({
-            ...     "min_liquidity": 1000,
-            ...     "binary_only": True
-            ... })
-        """
-        raise NotImplementedError("Manifold market discovery is not implemented")
+        raise self._unsupported("market discovery")
 
     def get_market(self, market_id: str) -> MarketState | None:
-        """Fetch specific market by ID.
+        """Fetch a specific market by ID."""
 
-        Args:
-            market_id: Manifold market ID.
-
-        Returns:
-            MarketState if found, None otherwise.
-        """
-        raise NotImplementedError("Manifold single-market fetch is not implemented")
+        raise self._unsupported("single-market fetch")
 
     def place_order(self, order: Order) -> ExecutionReport:
-        """Place bet on Manifold.
+        """Place a Manifold bet."""
 
-        Manifold uses an AMM, so orders are always filled immediately
-        at the current pool price. The "order" concept maps to "bet".
-
-        Args:
-            order: Order to execute (converted to bet).
-
-        Returns:
-            ExecutionReport with fill details.
-
-        Raises:
-            ValueError: If API key not set or order invalid.
-        """
-        if self.api_key is None:
-            raise ValueError("API key required for trading")
-
-        raise NotImplementedError("Manifold bet placement is not implemented")
+        raise self._unsupported("bet placement")
 
     def submit_order(self, order: Order) -> ExecutionReport:
         """Compatibility alias for live-trading adapters."""
+
         return self.place_order(order)
 
     def cancel_order(self, market_id: str, order_id: str) -> bool:
-        """Cancel outstanding bet.
+        """Cancel an outstanding order."""
 
-        Note: Manifold uses AMM, so bets are immediately filled.
-        This method is a no-op for compatibility.
-
-        Args:
-            market_id: Market identifier.
-            order_id: Bet identifier.
-
-        Returns:
-            False (cancellation not supported on AMM).
-        """
-        # AMM markets don't have pending orders to cancel
-        return False
+        raise self._unsupported("order cancellation")
 
     def get_position(self, market_id: str) -> float:
-        """Get current position in a market.
+        """Get current position in a market."""
 
-        Args:
-            market_id: Market identifier.
-
-        Returns:
-            Position size (shares held).
-        """
-        raise NotImplementedError("Manifold position lookup is not implemented")
+        raise self._unsupported("position lookup")
 
     def get_balance(self) -> float:
-        """Get mana balance.
+        """Get venue balance."""
 
-        Returns:
-            Available mana balance.
-        """
-        raise NotImplementedError("Manifold balance lookup is not implemented")
-
-    def _convert_market(self, raw_market: dict[str, Any]) -> MarketState:
-        """Convert Manifold API response to MarketState.
-
-        Manifold API format:
-        {
-            "id": "abc123",
-            "question": "Will X happen?",
-            "outcomeType": "BINARY",
-            "probability": 0.65,
-            "pool": {"YES": 1000, "NO": 538.46},
-            "volume24Hours": 5000,
-            "uniqueBettorCount": 42,
-            "createdTime": 1234567890000,
-            "closeTime": 1234567890000,
-            ...
-        }
-        """
-        # Parse basic info
-        market_id = f"manifold-{raw_market['id']}"
-        question = raw_market["question"]
-
-        # Parse probability
-        market_prob = raw_market["probability"]
-
-        # Parse dates
-        close_time_ms = raw_market.get("closeTime", 0)
-        expiry = datetime.fromtimestamp(close_time_ms / 1000) if close_time_ms else datetime.now()
-
-        # Determine category (Manifold doesn't have categories, use tags)
-        tags = raw_market.get("tags", [])
-        category = self._parse_category(tags)
-
-        # Calculate bid/ask from AMM pool
-        # Manifold uses constant product AMM: k = YES_pool * NO_pool
-        # Price moves based on trade size
-        pool_yes = raw_market.get("pool", {}).get("YES", 0)
-        pool_no = raw_market.get("pool", {}).get("NO", 0)
-
-        # Estimate spread (AMM has implicit spread based on trade size)
-        # For small trades, spread is roughly 1-2%
-        spread = 0.02
-        best_bid = market_prob - spread / 2
-        best_ask = market_prob + spread / 2
-
-        # Liquidity is pool size
-        bid_liquidity = pool_no  # To buy YES, we trade against NO pool
-        ask_liquidity = pool_yes  # To sell YES, we trade against YES pool
-
-        # Volume and traders
-        volume_24h = raw_market.get("volume24Hours", 0)
-        num_traders = raw_market.get("uniqueBettorCount", 0)
-
-        return MarketState(
-            market_id=market_id,
-            question=question,
-            market_prob=market_prob,
-            expiry=expiry,
-            category=category,
-            best_bid=best_bid,
-            best_ask=best_ask,
-            bid_liquidity=bid_liquidity,
-            ask_liquidity=ask_liquidity,
-            volume_24h=volume_24h,
-            num_traders=num_traders,
-            metadata={"raw": raw_market},
-        )
-
-    def _parse_category(self, tags: list[str]) -> MarketCategory:
-        """Parse tags to category."""
-        # Map common tags to categories
-        tag_str = " ".join(tags).lower()
-
-        if any(word in tag_str for word in ["politics", "election", "president"]):
-            return MarketCategory.POLITICS
-        elif any(word in tag_str for word in ["sports", "nfl", "nba", "soccer"]):
-            return MarketCategory.SPORTS
-        elif any(word in tag_str for word in ["economics", "economy", "gdp", "inflation"]):
-            return MarketCategory.ECONOMICS
-        elif any(word in tag_str for word in ["crypto", "bitcoin", "ethereum"]):
-            return MarketCategory.CRYPTO
-        elif any(word in tag_str for word in ["science", "ai", "technology"]):
-            return MarketCategory.SCIENCE
-
-        return MarketCategory.OTHER
-
-    def _convert_execution(self, order: Order, result: dict[str, Any]) -> ExecutionReport:
-        """Convert Manifold bet result to ExecutionReport.
-
-        Manifold bet response:
-        {
-            "betId": "abc123",
-            "amount": 100,
-            "shares": 153.85,
-            "probBefore": 0.65,
-            "probAfter": 0.66,
-            "fees": 1.0,
-            ...
-        }
-        """
-        # TODO: Parse actual result
-        shares = result.get("shares", 0)
-        amount = result.get("amount", 0)
-        avg_price = amount / shares if shares > 0 else 0
-        fees = result.get("fees", 0)
-
-        # Calculate slippage
-        prob_before = result.get("probBefore", 0)
-        prob_after = result.get("probAfter", 0)
-        slippage_bps = abs(prob_after - prob_before) / prob_before * 10_000 if prob_before > 0 else 0
-
-        return ExecutionReport(
-            order=order,
-            filled_size=shares,
-            avg_fill_price=avg_price,
-            fills=[(avg_price, shares)],
-            slippage_bps=slippage_bps,
-            fee_total=fees,
-            timestamp=datetime.now(),
-            metadata={"bet_id": result.get("betId")},
-        )
+        raise self._unsupported("balance lookup")

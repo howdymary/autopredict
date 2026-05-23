@@ -255,7 +255,10 @@ class PolymarketAdapter:
                 break
 
             for raw_market in raw_markets:
-                market = self._convert_market(raw_market)
+                try:
+                    market = self._convert_market(raw_market)
+                except ValueError:
+                    continue
                 if market.total_liquidity < min_liquidity:
                     continue
                 if market.volume_24h < min_volume:
@@ -389,16 +392,23 @@ class PolymarketAdapter:
         condition_id = str(raw_market["conditionId"])
         question = str(raw_market["question"]).strip()
         market_prob = self._extract_yes_probability(raw_market)
-        book = self._get_order_book(self._resolve_yes_no_tokens(raw_market)[0])
+        if market_prob is None:
+            raise ValueError(f"Polymarket market {condition_id} is missing a YES outcome price")
+        yes_token_id, no_token_id = self._resolve_yes_no_tokens(raw_market)
+        if not yes_token_id:
+            raise ValueError(f"Polymarket market {condition_id} is missing a YES token id")
+        book = self._get_order_book(yes_token_id)
         best_bid = self._best_price(book.get("bids", ()))
         best_ask = self._best_price(book.get("asks", ()))
         tick_size = self._extract_tick_size(raw_market, book)
         if best_bid is None:
-            best_bid = max(0.0, market_prob - tick_size)
+            raise ValueError(f"Polymarket market {condition_id} is missing CLOB bids")
         if best_ask is None:
-            best_ask = min(1.0, market_prob + tick_size)
+            raise ValueError(f"Polymarket market {condition_id} is missing CLOB asks")
 
         expiry = self._parse_timestamp(raw_market.get("endDate"))
+        if expiry is None:
+            raise ValueError(f"Polymarket market {condition_id} is missing endDate")
         category = self._infer_category(raw_market)
         bid_liquidity = self._total_size(book.get("bids", ()))
         ask_liquidity = self._total_size(book.get("asks", ()))
@@ -424,8 +434,8 @@ class PolymarketAdapter:
                 "slug": raw_market.get("slug"),
                 "outcomes": outcomes,
                 "token_ids": clob_token_ids,
-                "yes_token_id": clob_token_ids[0] if clob_token_ids else None,
-                "no_token_id": clob_token_ids[1] if len(clob_token_ids) > 1 else None,
+                "yes_token_id": yes_token_id,
+                "no_token_id": no_token_id,
                 "order_min_size": self._extract_min_order_size(raw_market, book),
                 "tick_size": tick_size,
                 "accepting_orders": bool(raw_market.get("acceptingOrders", True)),
@@ -470,6 +480,8 @@ class PolymarketAdapter:
     def _resolve_token_for_order(self, raw_market: dict[str, Any], order: Order) -> _ResolvedToken:
         yes_token, no_token = self._resolve_yes_no_tokens(raw_market)
         yes_price = self._extract_yes_probability(raw_market)
+        if yes_price is None:
+            raise ValueError("Polymarket market is missing a YES outcome price")
 
         if order.side == OrderSide.BUY:
             if not yes_token:
@@ -537,7 +549,9 @@ class PolymarketAdapter:
 
         best_ask = self._best_price(book.get("asks", ()))
         if best_ask is None:
-            best_ask = token.displayed_price
+            raise ValueError(
+                f"Polymarket market is missing executable asks for {token.outcome} token"
+            )
         return self._clamp_probability(self._round_to_tick(best_ask, tick_size))
 
     def _convert_execution_report(
@@ -680,18 +694,36 @@ class PolymarketAdapter:
     @staticmethod
     def _resolve_yes_no_tokens(raw_market: dict[str, Any]) -> tuple[str | None, str | None]:
         token_ids = PolymarketAdapter._parse_json_list(raw_market.get("clobTokenIds"))
-        yes_token = token_ids[0] if token_ids else None
-        no_token = token_ids[1] if len(token_ids) > 1 else None
+        outcomes = [
+            str(outcome).strip().lower()
+            for outcome in PolymarketAdapter._parse_json_list(raw_market.get("outcomes"))
+        ]
+        yes_token = (
+            token_ids[outcomes.index("yes")]
+            if "yes" in outcomes and outcomes.index("yes") < len(token_ids)
+            else None
+        )
+        no_token = (
+            token_ids[outcomes.index("no")]
+            if "no" in outcomes and outcomes.index("no") < len(token_ids)
+            else None
+        )
         return yes_token, no_token
 
     @staticmethod
-    def _extract_yes_probability(raw_market: dict[str, Any]) -> float:
+    def _extract_yes_probability(raw_market: dict[str, Any]) -> float | None:
+        outcomes = [
+            str(outcome).strip().lower()
+            for outcome in PolymarketAdapter._parse_json_list(raw_market.get("outcomes"))
+        ]
+        if "yes" not in outcomes:
+            return None
+        yes_index = outcomes.index("yes")
         prices = PolymarketAdapter._parse_json_list(raw_market.get("outcomePrices"))
-        if not prices:
-            return 0.5
-        return PolymarketAdapter._clamp_probability(
-            PolymarketAdapter._coerce_float(prices[0], default=0.5)
-        )
+        if yes_index >= len(prices):
+            return None
+        price = PolymarketAdapter._coerce_optional_float(prices[yes_index])
+        return PolymarketAdapter._clamp_probability(price) if price is not None else None
 
     @staticmethod
     def _parse_json_list(value: Any) -> list[Any]:
@@ -717,14 +749,21 @@ class PolymarketAdapter:
             return default
 
     @staticmethod
+    def _coerce_optional_float(value: Any) -> float | None:
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
     def _best_price(levels: list[dict[str, Any]] | tuple[Any, ...] | list[Any]) -> float | None:
         if not levels:
             return None
         level = levels[0]
         if isinstance(level, dict):
-            return PolymarketAdapter._coerce_float(level.get("price"), default=0.0)
+            return PolymarketAdapter._coerce_optional_float(level.get("price"))
         if isinstance(level, (list, tuple)) and level:
-            return PolymarketAdapter._coerce_float(level[0], default=0.0)
+            return PolymarketAdapter._coerce_optional_float(level[0])
         return None
 
     @staticmethod
@@ -738,10 +777,10 @@ class PolymarketAdapter:
         return total
 
     @staticmethod
-    def _parse_timestamp(value: Any) -> datetime:
+    def _parse_timestamp(value: Any) -> datetime | None:
         if isinstance(value, str) and value:
             return datetime.fromisoformat(value.replace("Z", "+00:00"))
-        return datetime.now(timezone.utc)
+        return None
 
     @staticmethod
     def _round_to_tick(price: float, tick_size: float) -> float:

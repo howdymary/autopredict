@@ -6,11 +6,17 @@ import json
 import math
 import os
 import tempfile
+from contextlib import contextmanager
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from enum import Enum
 from pathlib import Path
-from typing import Any, Mapping
+from typing import Any, Iterator, Mapping
+
+try:
+    import fcntl
+except ImportError:  # pragma: no cover - fcntl is available on production POSIX targets.
+    fcntl = None  # type: ignore[assignment]
 
 FRONTIER_SCHEMA_VERSION = 1
 
@@ -107,14 +113,16 @@ class FrontierStore:
             raise ValueError("score must be a finite number")
         if not metric_name:
             raise ValueError("metric_name must be non-empty")
+        metrics_payload = _json_ready(dict(metrics)) if metrics is not None else None
+        if isinstance(metrics_payload, Mapping) and metric_name in metrics_payload:
+            metric_score = _coerce_metric_score(metrics_payload, metric_name)
+            if not math.isclose(score_value, metric_score, rel_tol=1e-12, abs_tol=1e-12):
+                raise ValueError(
+                    f"score {score_value!r} does not match metrics[{metric_name!r}] "
+                    f"{metric_score!r}"
+                )
 
         key = frontier_key(dataset_hash, split_mode, strategy_kind)
-        payload = self.load()
-        entries = payload["entries"]
-        previous = entries.get(key)
-        if previous is not None and not isinstance(previous, Mapping):
-            raise ValueError(f"frontier entry for {key!r} must be a JSON object")
-
         entry = {
             "dataset_hash": str(dataset_hash),
             "split_mode": _string_value(split_mode),
@@ -128,31 +136,39 @@ class FrontierStore:
             entry["archive_path"] = str(archive_path)
         if genome is not None:
             entry["genome"] = _json_ready(genome)
-        if metrics is not None:
-            entry["metrics"] = _json_ready(dict(metrics))
+        if metrics_payload is not None:
+            entry["metrics"] = metrics_payload
         if run_id:
             entry["run_id"] = run_id
         if metadata is not None:
             entry["metadata"] = _json_ready(dict(metadata))
 
-        if previous is not None:
-            _validate_comparable(previous, metric_name, higher_is_better)
-            previous_score = float(previous["score"])
-            is_better = (
-                score_value > previous_score
-                if higher_is_better
-                else score_value < previous_score
-            )
-            if not is_better:
-                return FrontierPromotion(
-                    accepted=False,
-                    key=key,
-                    entry=entry,
-                    previous=dict(previous),
-                )
+        with _locked_frontier(self.path):
+            payload = self.load()
+            entries = payload["entries"]
+            previous = entries.get(key)
+            if previous is not None and not isinstance(previous, Mapping):
+                raise ValueError(f"frontier entry for {key!r} must be a JSON object")
 
-        entries[key] = entry
-        _atomic_write_json(self.path, payload)
+            if previous is not None:
+                _validate_comparable(previous, metric_name, higher_is_better)
+                previous_score = float(previous["score"])
+                is_better = (
+                    score_value > previous_score
+                    if higher_is_better
+                    else score_value < previous_score
+                )
+                if not is_better:
+                    return FrontierPromotion(
+                        accepted=False,
+                        key=key,
+                        entry=entry,
+                        previous=dict(previous),
+                    )
+
+            entries[key] = entry
+            _atomic_write_json(self.path, payload)
+
         return FrontierPromotion(
             accepted=True,
             key=key,
@@ -165,14 +181,14 @@ def promote_archive(
     frontier_path: str | Path,
     archive: Mapping[str, Any],
     *,
-    score: float,
+    score: float | None = None,
     metric_name: str = "score",
     higher_is_better: bool = True,
     archive_path: str | Path | None = None,
     run_id: str | None = None,
     promoted_at: datetime | str | None = None,
 ) -> FrontierPromotion:
-    """Promote an archive payload with an explicit score."""
+    """Promote an archive payload using a score verified against archived metrics."""
 
     dataset = archive.get("dataset")
     if not isinstance(dataset, Mapping) or not dataset.get("sha256"):
@@ -181,6 +197,19 @@ def promote_archive(
     split_mode = _archive_split_mode(archive)
     strategy_kind = _archive_strategy_kind(archive)
     metrics = _archive_winner_metrics(archive)
+    if metrics is None:
+        raise ValueError("archive must include winner metrics to promote")
+    archive_score = _coerce_metric_score(metrics, metric_name)
+    if score is not None and not math.isclose(
+        float(score),
+        archive_score,
+        rel_tol=1e-12,
+        abs_tol=1e-12,
+    ):
+        raise ValueError(
+            f"promotion score {float(score)!r} does not match archived metric "
+            f"{metric_name!r}={archive_score!r}"
+        )
     genome = _archive_final_genome(archive)
     provenance = archive.get("provenance", {})
 
@@ -188,7 +217,7 @@ def promote_archive(
         dataset_hash=str(dataset["sha256"]),
         split_mode=split_mode,
         strategy_kind=strategy_kind,
-        score=score,
+        score=archive_score,
         metric_name=metric_name,
         higher_is_better=higher_is_better,
         archive_path=archive_path,
@@ -268,6 +297,29 @@ def _validate_comparable(
         raise ValueError("existing frontier entry uses a different score direction")
 
 
+def _coerce_metric_score(metrics: Mapping[str, Any], metric_name: str) -> float:
+    if metric_name not in metrics:
+        raise ValueError(f"metrics are missing required metric {metric_name!r}")
+    score = float(metrics[metric_name])
+    if not math.isfinite(score):
+        raise ValueError(f"metric {metric_name!r} must be finite")
+    return score
+
+
+@contextmanager
+def _locked_frontier(path: Path) -> Iterator[None]:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    lock_path = path.with_name(f".{path.name}.lock")
+    with lock_path.open("a+", encoding="utf-8") as lock_file:
+        if fcntl is not None:
+            fcntl.flock(lock_file.fileno(), fcntl.LOCK_EX)
+        try:
+            yield
+        finally:
+            if fcntl is not None:
+                fcntl.flock(lock_file.fileno(), fcntl.LOCK_UN)
+
+
 def _atomic_write_json(path: Path, payload: Mapping[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     fd, temp_name = tempfile.mkstemp(
@@ -278,11 +330,12 @@ def _atomic_write_json(path: Path, payload: Mapping[str, Any]) -> None:
     )
     try:
         with os.fdopen(fd, "w", encoding="utf-8") as handle:
-            json.dump(payload, handle, indent=2, sort_keys=True)
+            json.dump(payload, handle, allow_nan=False, indent=2, sort_keys=True)
             handle.write("\n")
             handle.flush()
             os.fsync(handle.fileno())
         os.replace(temp_name, path)
+        _fsync_directory(path.parent)
     finally:
         if os.path.exists(temp_name):
             os.unlink(temp_name)
@@ -308,7 +361,11 @@ def _string_value(value: str | Enum) -> str:
 def _json_ready(value: Any) -> Any:
     if isinstance(value, Enum):
         return value.value
-    if value is None or isinstance(value, (str, int, float, bool)):
+    if isinstance(value, float):
+        if not math.isfinite(value):
+            raise ValueError("frontier entries cannot contain non-finite numeric values")
+        return value
+    if value is None or isinstance(value, (str, int, bool)):
         return value
     if isinstance(value, datetime):
         return value.isoformat()
@@ -323,7 +380,21 @@ def _json_ready(value: Any) -> Any:
     if hasattr(value, "to_dict") and callable(value.to_dict):
         return _json_ready(value.to_dict())
     try:
-        json.dumps(value)
+        json.dumps(value, allow_nan=False)
     except TypeError:
         return repr(value)
     return value
+
+
+def _fsync_directory(path: Path) -> None:
+    try:
+        flags = os.O_RDONLY | getattr(os, "O_DIRECTORY", 0)
+        fd = os.open(path, flags)
+    except OSError:
+        return
+    try:
+        os.fsync(fd)
+    except OSError:
+        pass
+    finally:
+        os.close(fd)

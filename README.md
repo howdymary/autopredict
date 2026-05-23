@@ -32,7 +32,7 @@ Use the live scanner to inspect public Polymarket data without placing orders or
 ```bash
 python -m autopredict.cli scan-live --limit 20 --top 5
 python -m autopredict.cli scan-live --events --limit 20 --top 5 --json
-python -m autopredict.cli safety-audit --config configs/live_trading.yaml.example
+python -m autopredict.cli safety-audit --config /path/to/your/live_trading.yaml
 ```
 
 Market scans report observed Gamma prices plus public CLOB bid/ask/depth when available. Missing order-book data stays `null`/`n/a`; the scanner does not fill gaps with estimates.

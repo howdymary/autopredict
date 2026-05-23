@@ -38,7 +38,6 @@ from autopredict.domains import RoutedSpecialistStrategy, SpecialistOrderPolicy
 from autopredict.live import LiveTrader, Monitor, RiskManager
 from autopredict.live.monitor import PerformanceSnapshot, create_decision_log, create_trade_log
 from autopredict.live.risk import Position as RiskPosition
-from autopredict.markets import PolymarketAdapter
 from autopredict.prediction_market import AgentRunConfig, PredictionMarketAgent
 from autopredict.prediction_market.types import DecisionStatus, VenueConfig as ScaffoldVenueConfig, VenueName
 
@@ -127,6 +126,8 @@ def _create_venue_adapter(config, *, dry_run: bool = False):
     venue_name = str(config.venue.name).lower()
 
     if venue_name == "polymarket":
+        from autopredict.markets import PolymarketAdapter
+
         adapter = PolymarketAdapter.from_env(
             api_key=config.venue.api_key,
             api_secret=config.venue.api_secret,

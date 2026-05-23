@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
+import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -236,6 +238,37 @@ def test_build_run_archive_uses_only_provided_dataset_identity(tmp_path: Path) -
     }
 
 
+def test_build_run_archive_records_dirty_git_state(tmp_path: Path) -> None:
+    subprocess.run(["git", "init"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(["git", "config", "user.email", "audit@example.com"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "config", "user.name", "Audit"], cwd=tmp_path, check=True)
+    tracked = tmp_path / "tracked.txt"
+    tracked.write_text("clean\n", encoding="utf-8")
+    subprocess.run(["git", "add", "tracked.txt"], cwd=tmp_path, check=True)
+    subprocess.run(["git", "commit", "-m", "initial"], cwd=tmp_path, check=True, capture_output=True)
+    tracked.write_text("dirty\n", encoding="utf-8")
+    (tmp_path / "untracked.txt").write_text("new\n", encoding="utf-8")
+
+    payload = build_run_archive(
+        _walk_forward_report(),
+        repo_root=tmp_path,
+        dependency_names=(),
+    )
+
+    assert payload["provenance"]["git"]["dirty"] is True
+    assert payload["provenance"]["git"]["tracked_diff_sha256"]
+    assert payload["provenance"]["git"]["untracked_files"] == ["untracked.txt"]
+
+
+def test_archive_rejects_non_finite_metrics(tmp_path: Path) -> None:
+    with pytest.raises(ValueError, match="non-finite"):
+        build_run_archive(
+            {"metrics": {"log_score": math.nan}},
+            repo_root=tmp_path,
+            dependency_names=(),
+        )
+
+
 def test_archive_and_frontier_accept_lightweight_ratchet_summary(tmp_path: Path) -> None:
     dataset = tmp_path / "resolved.json"
     dataset.write_text("[]", encoding="utf-8")
@@ -395,6 +428,40 @@ def test_promote_archive_uses_dataset_split_and_final_genome(tmp_path: Path) -> 
     assert promotion.entry["strategy_kind"] == "legacy_mispriced"
     assert promotion.entry["genome"]["name"] == "baseline_conservative"
     assert promotion.entry["metrics"]["total_pnl"] == 4.0
+
+
+def test_promote_archive_rejects_score_mismatched_with_archived_metrics(tmp_path: Path) -> None:
+    dataset = tmp_path / "dataset.json"
+    dataset.write_text("[]", encoding="utf-8")
+    archive = build_run_archive(
+        _walk_forward_report(),
+        dataset_path=dataset,
+        config=WalkForwardConfig(split_mode=WalkForwardSplit.REGIME),
+        repo_root=tmp_path,
+        dependency_names=(),
+    )
+
+    with pytest.raises(ValueError, match="does not match archived metric"):
+        promote_archive(
+            tmp_path / "frontier.json",
+            archive,
+            score=999.0,
+            metric_name="log_score",
+        )
+
+
+def test_frontier_store_rejects_score_mismatched_with_metrics(tmp_path: Path) -> None:
+    store = FrontierStore(tmp_path / "frontier.json")
+
+    with pytest.raises(ValueError, match="does not match metrics"):
+        store.promote(
+            dataset_hash="hash-1",
+            split_mode="chronological",
+            strategy_kind="legacy_mispriced",
+            score=999.0,
+            metric_name="log_score",
+            metrics={"log_score": -0.5},
+        )
 
 
 def test_frontier_rejects_incomparable_metric_direction(tmp_path: Path) -> None:

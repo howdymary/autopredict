@@ -127,9 +127,13 @@ def run_backtest(
         outcome = int(record["outcome"])
         if outcome not in (0, 1):
             raise ValueError(f"{market_id} outcome must be 0 or 1, got {record['outcome']!r}")
-        next_mid = _validate_probability(record.get("next_mid_price", market_prob), f"{market_id} next_mid_price")
+        if "next_mid_price" not in record:
+            raise ValueError(f"{market_id} missing required next_mid_price")
+        if "time_to_expiry_hours" not in record:
+            raise ValueError(f"{market_id} missing required time_to_expiry_hours")
+        next_mid = _validate_probability(record["next_mid_price"], f"{market_id} next_mid_price")
         expiry_hours = _validate_non_negative_float(
-            record.get("time_to_expiry_hours", 24.0),
+            record["time_to_expiry_hours"],
             f"{market_id} time_to_expiry_hours",
         )
         order_book = _build_order_book(market_id, record["order_book"])

@@ -27,7 +27,7 @@ This is read-only. It reports observed public Polymarket data and never creates 
 Run the local safety audit before wiring live execution:
 
 ```bash
-python -m autopredict.cli safety-audit --config configs/live_trading.yaml.example
+python -m autopredict.cli safety-audit --config /path/to/your/live_trading.yaml
 ```
 
 ## 3. Run A Backtest

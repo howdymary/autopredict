@@ -23,11 +23,11 @@ AutoPredict supports two deployment modes:
 ### Quick Start
 
 ```bash
-# Paper trading (safe)
-python scripts/run_paper.py --config configs/paper_trading.yaml
+# Paper trading (safe, from an installed package)
+autopredict-paper --config /path/to/paper_trading.yaml
 
 # Live trading (DANGER - real money)
-python scripts/run_live.py --config configs/live_trading.yaml
+autopredict-live --config /path/to/live_trading.yaml
 ```
 
 ## Paper Trading
@@ -44,27 +44,27 @@ Paper trading simulates order execution without risking real capital. Use this t
 1. **Use the provided configuration:**
    ```bash
    # configs/paper_trading.yaml is ready to use
-   python scripts/run_paper.py --config configs/paper_trading.yaml
+   autopredict-paper --config configs/paper_trading.yaml
    ```
 
 2. **Or create your own:**
    ```bash
    cp configs/paper_trading.yaml configs/my_paper_config.yaml
    # Edit my_paper_config.yaml
-   python scripts/run_paper.py --config configs/my_paper_config.yaml
+   autopredict-paper --config configs/my_paper_config.yaml
    ```
 
 ### Running Paper Trading
 
 ```bash
 # Run indefinitely
-python scripts/run_paper.py --config configs/paper_trading.yaml
+autopredict-paper --config configs/paper_trading.yaml
 
 # Run for 1 hour (3600 seconds)
-python scripts/run_paper.py --config configs/paper_trading.yaml --duration 3600
+autopredict-paper --config configs/paper_trading.yaml --duration 3600
 
 # Enable verbose logging
-python scripts/run_paper.py --config configs/paper_trading.yaml --verbose
+autopredict-paper --config configs/paper_trading.yaml --verbose
 ```
 
 ### What Gets Simulated
@@ -162,7 +162,7 @@ Before running live trading:
 Test configuration without executing trades:
 
 ```bash
-python scripts/run_live.py --config configs/live_trading.yaml --dry-run
+autopredict-live --config configs/live_trading.yaml --dry-run
 ```
 
 This validates:
@@ -174,7 +174,7 @@ This validates:
 **Step 2: Live Run**
 
 ```bash
-python scripts/run_live.py --config configs/live_trading.yaml
+autopredict-live --config configs/live_trading.yaml
 ```
 
 You will be prompted:
@@ -513,7 +513,7 @@ risk_manager.reset_kill_switch("RESET KILL SWITCH")
 Enable verbose logging:
 
 ```bash
-python scripts/run_paper.py --config configs/paper_trading.yaml --verbose
+autopredict-paper --config configs/paper_trading.yaml --verbose
 ```
 
 Or in configuration:

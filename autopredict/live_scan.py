@@ -143,13 +143,16 @@ class ObservedMarket:
             raise ValueError("Gamma market payload is missing conditionId")
 
         outcomes = [str(value).strip().lower() for value in _parse_json_list(raw.get("outcomes"))]
-        yes_index = outcomes.index("yes") if "yes" in outcomes else 0
+        yes_index = outcomes.index("yes") if "yes" in outcomes else None
+        no_index = outcomes.index("no") if "no" in outcomes else None
         token_ids = _parse_json_list(raw.get("clobTokenIds"))
         prices = _parse_json_list(raw.get("outcomePrices"))
 
-        yes_token_id = _list_str_at(token_ids, yes_index)
-        no_token_id = _list_str_at(token_ids, 1 if yes_index == 0 else 0)
-        market_prob = _coerce_probability(_list_at(prices, yes_index))
+        yes_token_id = _list_str_at(token_ids, yes_index) if yes_index is not None else None
+        no_token_id = _list_str_at(token_ids, no_index) if no_index is not None else None
+        market_prob = (
+            _coerce_probability(_list_at(prices, yes_index)) if yes_index is not None else None
+        )
 
         return cls(
             condition_id=condition_id,
@@ -327,7 +330,7 @@ class EventMarketLine:
 
 @dataclass(frozen=True)
 class EventScanReport:
-    """Observed event-level sibling price summary."""
+    """Observed event-level sibling price inventory."""
 
     event_id: str
     title: str
@@ -335,26 +338,19 @@ class EventScanReport:
     market_count: int
     priced_market_count: int
     observed_probability_sum: float | None
-    deviation_from_one: float | None
     status: str
     markets: tuple[EventMarketLine, ...]
 
     @classmethod
     def from_event(cls, event: ObservedEvent, *, tolerance: float) -> "EventScanReport":
+        del tolerance
         priced = [market.market_prob for market in event.markets if market.market_prob is not None]
         prob_sum = sum(priced) if len(priced) >= 2 else None
-        deviation = prob_sum - 1.0 if prob_sum is not None else None
 
         if prob_sum is None:
             status = "insufficient_priced_markets"
-        elif prob_sum < 0.5 or prob_sum > 1.5:
-            status = "sum_far_from_one_exclusivity_uncertain"
-        elif deviation < -tolerance:
-            status = "observed_under_one"
-        elif deviation > tolerance:
-            status = "observed_over_one"
         else:
-            status = "observed_near_one"
+            status = "observed_sibling_prices_nonexclusive"
 
         return cls(
             event_id=event.event_id,
@@ -363,7 +359,6 @@ class EventScanReport:
             market_count=len(event.markets),
             priced_market_count=len(priced),
             observed_probability_sum=prob_sum,
-            deviation_from_one=deviation,
             status=status,
             markets=tuple(EventMarketLine.from_market(market) for market in event.markets),
         )
@@ -376,7 +371,6 @@ class EventScanReport:
             "market_count": self.market_count,
             "priced_market_count": self.priced_market_count,
             "observed_probability_sum": self.observed_probability_sum,
-            "deviation_from_one": self.deviation_from_one,
             "status": self.status,
             "markets": [market.to_dict() for market in self.markets],
         }
@@ -684,7 +678,6 @@ def format_event_scan(reports: Sequence[EventScanReport], *, verbose: bool = Fal
             "  "
             f"markets={report.market_count} priced={report.priced_market_count} "
             f"observed_yes_sum={_fmt_decimal(report.observed_probability_sum)} "
-            f"gap_to_one={_fmt_signed_percent(report.deviation_from_one)} "
             f"status={report.status}"
         )
         for market in sorted(
@@ -698,7 +691,9 @@ def format_event_scan(reports: Sequence[EventScanReport], *, verbose: bool = Fal
             if verbose:
                 lines.append(f"      id={market.condition_id} slug={market.slug or 'n/a'}")
         lines.append("")
-    lines.append("Event sums are observed sibling YES prices only; exclusivity is not assumed.")
+    lines.append(
+        "Event sums are observed sibling YES prices only; they are not normalized and exclusivity is not assumed."
+    )
     return "\n".join(lines).rstrip()
 
 
@@ -782,15 +777,12 @@ def _passes_market_filters(
 
 def _event_report_sort_key(report: EventScanReport) -> tuple[int, float, str]:
     rank_by_status = {
-        "observed_under_one": 0,
-        "observed_over_one": 0,
-        "observed_near_one": 1,
-        "sum_far_from_one_exclusivity_uncertain": 2,
+        "observed_sibling_prices_nonexclusive": 0,
         "insufficient_priced_markets": 3,
     }
     return (
         rank_by_status.get(report.status, 9),
-        -(abs(report.deviation_from_one) if report.deviation_from_one is not None else 0.0),
+        -report.priced_market_count,
         report.title,
     )
 

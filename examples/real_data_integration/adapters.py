@@ -44,7 +44,7 @@ class CSVDataAdapter:
             market_id=market_id,
             market_prob=float(row["market_prob"]),
             fair_prob=float(row["fair_prob"]),
-            time_to_expiry_hours=float(row.get("time_to_expiry_hours") or 24.0),
+            time_to_expiry_hours=float(row["time_to_expiry_hours"]),
             order_book=OrderBook(market_id=market_id, bids=bids, asks=asks),
             metadata={"category": row.get("category", "unknown")},
         )

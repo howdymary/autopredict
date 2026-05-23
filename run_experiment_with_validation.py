@@ -15,12 +15,12 @@ if __package__ in {None, ""}:
     from autopredict.agent import AutoPredictAgent, MarketState
     from autopredict.market_env import ExecutionEngine, ForecastRecord, TradeRecord, evaluate_all
     from autopredict.run_experiment import _build_order_book, _realized_pnl
-    from autopredict.validation import FairProbValidator, ValidationWarning
+    from validation import FairProbValidator, ValidationWarning
 else:
     from .agent import AutoPredictAgent, MarketState
     from .market_env import ExecutionEngine, ForecastRecord, TradeRecord, evaluate_all
     from .run_experiment import _build_order_book, _realized_pnl
-    from .validation import FairProbValidator, ValidationWarning
+    from validation import FairProbValidator, ValidationWarning
 
 
 def _load_json(path: str | Path) -> dict | list:
@@ -92,8 +92,12 @@ def run_backtest_with_validation(
         fair_prob = float(record["fair_prob"])
         outcome = int(record["outcome"])
         category = record.get("category", "unknown")
-        next_mid = float(record.get("next_mid_price", market_prob))
-        expiry_hours = float(record.get("time_to_expiry_hours", 24.0))
+        if "next_mid_price" not in record:
+            raise ValueError(f"{market_id} missing required next_mid_price")
+        if "time_to_expiry_hours" not in record:
+            raise ValueError(f"{market_id} missing required time_to_expiry_hours")
+        next_mid = float(record["next_mid_price"])
+        expiry_hours = float(record["time_to_expiry_hours"])
         order_book = _build_order_book(market_id, record["order_book"])
 
         validation_stats["total_markets"] += 1

@@ -3,15 +3,29 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import os
 from pathlib import Path
 from typing import Any, Mapping
 
-from autopredict.config.loader import collect_missing_env_vars, load_yaml
+from autopredict.config.loader import (
+    collect_missing_env_vars,
+    is_missing_env_placeholder,
+    load_yaml,
+)
 from autopredict.domains import (
     build_default_finance_model,
     build_default_generic_model,
     build_default_politics_model,
     build_default_weather_model,
+)
+
+
+POLYMARKET_LIVE_CREDENTIAL_ENV_VARS = (
+    "POLYMARKET_API_KEY",
+    "POLYMARKET_API_SECRET",
+    "POLYMARKET_API_PASSPHRASE",
+    "POLYMARKET_PRIVATE_KEY",
+    "POLYMARKET_FUNDER",
 )
 
 
@@ -43,8 +57,8 @@ def run_safety_audit(config_path: str | Path | None = None) -> SafetyAuditResult
     config_payload: Mapping[str, Any] = {}
     if config_path is not None:
         config_payload = load_yaml(config_path, allow_missing_env=True)
-        missing_env = tuple(sorted(set(collect_missing_env_vars(config_payload))))
         live_requested = _live_mode_requested(config_payload)
+        missing_env = tuple(sorted(_missing_live_env_vars(config_payload) if live_requested else set()))
         checks["live_credentials_present"] = not (live_requested and missing_env)
         metadata["missing_env_vars"] = list(missing_env)
         metadata["live_mode_requested"] = live_requested
@@ -82,6 +96,33 @@ def _live_mode_requested(config: Mapping[str, Any]) -> bool:
     if isinstance(trading, Mapping) and str(trading.get("mode", "")).lower() == "live":
         return True
     return False
+
+
+def _missing_live_env_vars(config: Mapping[str, Any]) -> set[str]:
+    missing = set(collect_missing_env_vars(config))
+
+    venue = config.get("venue")
+    venue_payload = venue if isinstance(venue, Mapping) else {}
+    venue_name = str(venue_payload.get("name", "polymarket")).lower()
+    if venue_name != "polymarket":
+        return missing
+
+    configured_values = {
+        "POLYMARKET_API_KEY": venue_payload.get("api_key"),
+        "POLYMARKET_API_SECRET": venue_payload.get("api_secret"),
+        "POLYMARKET_API_PASSPHRASE": venue_payload.get("api_passphrase"),
+        "POLYMARKET_PRIVATE_KEY": venue_payload.get("private_key"),
+        "POLYMARKET_FUNDER": venue_payload.get("funder"),
+    }
+    for env_name in POLYMARKET_LIVE_CREDENTIAL_ENV_VARS:
+        configured_value = configured_values.get(env_name)
+        if configured_value and not is_missing_env_placeholder(configured_value):
+            continue
+        if os.getenv(env_name):
+            continue
+        missing.add(env_name)
+
+    return missing
 
 
 def _default_models_are_neutral() -> bool:

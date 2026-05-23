@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import importlib
 from pathlib import Path
 import subprocess
 import sys
@@ -27,6 +28,48 @@ def _write_resolved_dataset(path: Path) -> None:
                         "asks": [[0.51, 100.0]],
                     },
                 }
+            ]
+        ),
+        encoding="utf-8",
+    )
+
+
+def _write_trade_records(path: Path) -> None:
+    path.write_text(
+        json.dumps(
+            [
+                {
+                    "market_id": "fixture-trade-1",
+                    "side": "buy",
+                    "order_type": "market",
+                    "requested_size": 10.0,
+                    "filled_size": 10.0,
+                    "fill_price": 0.52,
+                    "mid_at_decision": 0.50,
+                    "next_mid_price": 0.56,
+                    "outcome": 1,
+                    "pnl": 4.8,
+                    "slippage_bps": 200.0,
+                    "market_impact_bps": 100.0,
+                    "implementation_shortfall_bps": 200.0,
+                    "fill_rate": 1.0,
+                },
+                {
+                    "market_id": "fixture-trade-2",
+                    "side": "buy",
+                    "order_type": "market",
+                    "requested_size": 10.0,
+                    "filled_size": 10.0,
+                    "fill_price": 0.52,
+                    "mid_at_decision": 0.50,
+                    "next_mid_price": 0.45,
+                    "outcome": 0,
+                    "pnl": -5.2,
+                    "slippage_bps": 200.0,
+                    "market_impact_bps": 100.0,
+                    "implementation_shortfall_bps": 200.0,
+                    "fill_rate": 1.0,
+                },
             ]
         ),
         encoding="utf-8",
@@ -117,6 +160,16 @@ def test_legacy_run_experiment_script_executes_directly(tmp_path: Path) -> None:
     assert metrics["forecast_source"] == "dataset_fair_prob"
 
 
+def test_packaged_legacy_modules_import() -> None:
+    for module_name in (
+        "autopredict.agent",
+        "autopredict.market_env",
+        "autopredict.run_experiment",
+        "autopredict.run_experiment_with_validation",
+    ):
+        importlib.import_module(module_name)
+
+
 def test_live_script_dry_run_does_not_require_real_env_vars() -> None:
     completed = _run_live_script(
         "--config",
@@ -126,3 +179,37 @@ def test_live_script_dry_run_does_not_require_real_env_vars() -> None:
 
     assert "DRY RUN MODE" in completed.stdout
     assert "POLYMARKET_API_KEY" in completed.stdout
+
+
+def test_custom_metrics_example_requires_explicit_trade_records() -> None:
+    completed = subprocess.run(
+        [sys.executable, str(ROOT / "examples/custom_metrics/custom_metrics.py")],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+    )
+
+    assert completed.returncode != 0
+    assert "--trades" in completed.stderr
+
+
+def test_custom_metrics_example_reads_explicit_trade_records(tmp_path: Path) -> None:
+    trades_path = tmp_path / "trade_records.json"
+    _write_trade_records(trades_path)
+
+    completed = subprocess.run(
+        [
+            sys.executable,
+            str(ROOT / "examples/custom_metrics/custom_metrics.py"),
+            "--trades",
+            str(trades_path),
+        ],
+        cwd=ROOT,
+        check=True,
+        capture_output=True,
+        text=True,
+    )
+    metrics = json.loads(completed.stdout)
+
+    assert metrics["profit_factor"] > 0
+    assert metrics["max_consecutive_wins"] == 1.0

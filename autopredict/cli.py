@@ -10,7 +10,6 @@ from pathlib import Path
 from .evaluation import load_resolved_snapshots
 from .learning.analyzer import PerformanceAnalyzer
 from .learning.logger import TradeLogger
-from . import live_scan
 from .live.safety_audit import run_safety_audit
 from .run_experiment import run_backtest
 from .self_improvement import (
@@ -25,6 +24,7 @@ from .self_improvement import (
 PACKAGE_ROOT = Path(__file__).resolve().parent
 REPO_ROOT = PACKAGE_ROOT.parent
 BUNDLED_DEFAULT_ROOT = PACKAGE_ROOT / "_defaults"
+SCAN_LIVE_DEFAULT_TIMEOUT_SECONDS = 30.0
 
 
 def _project_root() -> Path:
@@ -125,6 +125,8 @@ def command_trade_live(args: argparse.Namespace) -> None:
 
 def command_scan_live(args: argparse.Namespace) -> None:
     """Scan public Polymarket data without generating forecasts or orders."""
+
+    from . import live_scan
 
     client = live_scan.PublicPolymarketClient(timeout_seconds=args.timeout)
     scanner = live_scan.LivePolymarketScanner(client)
@@ -320,7 +322,7 @@ def build_parser() -> argparse.ArgumentParser:
     scan_live.add_argument("--tolerance", type=float, default=0.02)
     scan_live.add_argument("--limit", type=int, default=100)
     scan_live.add_argument("--top", type=int, default=15)
-    scan_live.add_argument("--timeout", type=float, default=live_scan.DEFAULT_TIMEOUT_SECONDS)
+    scan_live.add_argument("--timeout", type=float, default=SCAN_LIVE_DEFAULT_TIMEOUT_SECONDS)
     scan_live.add_argument("--json", action="store_true", help="Emit JSON")
     scan_live.add_argument("--verbose", "-v", action="store_true", help="Show IDs and sources")
     scan_live.add_argument("--no-books", action="store_true", help="Skip CLOB order books")

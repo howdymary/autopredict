@@ -5,7 +5,10 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any
 
-from .market_env import OrderBook
+try:
+    from .market_env import OrderBook
+except ImportError:  # pragma: no cover - supports legacy top-level imports.
+    from market_env import OrderBook
 
 # Constants for epsilon values and calculation precision
 EPSILON = 1e-9

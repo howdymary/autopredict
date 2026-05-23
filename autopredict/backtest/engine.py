@@ -553,7 +553,16 @@ def load_snapshots_from_json(path: str | Path) -> list[MarketSnapshot]:
             raise ValueError(f"Snapshot {i} must be a JSON object")
 
         # Required fields
-        required = ["market_id", "market_prob", "fair_prob", "order_book", "outcome"]
+        required = [
+            "market_id",
+            "timestamp",
+            "market_prob",
+            "fair_prob",
+            "time_to_expiry_hours",
+            "order_book",
+            "outcome",
+            "next_mid_price",
+        ]
         for field in required:
             if field not in record:
                 raise ValueError(f"Snapshot {i} missing required field: {field}")
@@ -572,18 +581,18 @@ def load_snapshots_from_json(path: str | Path) -> list[MarketSnapshot]:
             ],
         )
 
-        # Create snapshot
-        snapshot = MarketSnapshot(
-            market_id=str(record["market_id"]),
-            timestamp=float(record.get("timestamp", i)),
-            market_prob=float(record["market_prob"]),
-            fair_prob=float(record["fair_prob"]),
-            time_to_expiry_hours=float(record.get("time_to_expiry_hours", 24.0)),
-            order_book=order_book,
-            outcome=int(record["outcome"]),
-            next_mid_price=float(record["next_mid_price"]) if "next_mid_price" in record else None,
-            metadata=record.get("metadata", {}),
-        )
+            # Create snapshot
+            snapshot = MarketSnapshot(
+                market_id=str(record["market_id"]),
+                timestamp=float(record["timestamp"]),
+                market_prob=float(record["market_prob"]),
+                fair_prob=float(record["fair_prob"]),
+                time_to_expiry_hours=float(record["time_to_expiry_hours"]),
+                order_book=order_book,
+                outcome=int(record["outcome"]),
+                next_mid_price=float(record["next_mid_price"]),
+                metadata=record.get("metadata", {}),
+            )
         snapshots.append(snapshot)
 
     return snapshots

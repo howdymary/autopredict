@@ -22,9 +22,11 @@ python -m autopredict.cli score-latest
 Use real historical/resolved market snapshots. At minimum, records should include the fields required by the loader you are using, such as:
 
 - `market_id`
+- real observation time such as `observed_at`/`timestamp`
 - `market_prob`
 - `outcome`
-- `time_to_expiry_hours` or equivalent expiry metadata
+- `time_to_expiry_hours` or equivalent real expiry metadata
+- `next_mid_price` when execution/adverse-selection metrics are evaluated
 - order-book or liquidity fields when execution quality is being evaluated
 
 If you provide `fair_prob`, the legacy loop can score that supplied forecast source. The package does not generate or bundle `fair_prob` values.

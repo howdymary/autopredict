@@ -1,0 +1,69 @@
+"""Self-improvement loop prototype for prediction-market strategy evolution."""
+
+from autopredict.self_improvement.archive import (
+    build_run_archive,
+    dataset_sha256,
+    load_run_archive,
+    write_run_archive,
+)
+from autopredict.self_improvement.frontier import (
+    FrontierPromotion,
+    FrontierStore,
+    frontier_key,
+    promote_archive,
+)
+from autopredict.self_improvement.loop import (
+    ImprovementCycleReport,
+    ImprovementLoopConfig,
+    SelfImprovementLoop,
+    WalkForwardConfig,
+    WalkForwardFoldReport,
+    WalkForwardReport,
+    WalkForwardSplit,
+)
+from autopredict.self_improvement.mutation import (
+    MutationConfig,
+    StrategyGenome,
+    StrategyMutator,
+)
+from autopredict.self_improvement.ratchet import (
+    ForecastRatchetSummary,
+    default_forecast_owned_genome,
+    improvement_config_with_population,
+    run_forecast_owned_ratchet,
+)
+from autopredict.self_improvement.selection import (
+    CandidateEvaluation,
+    SelectionConfig,
+    SelectionOutcome,
+    StrategySelector,
+)
+
+__all__ = [
+    "build_run_archive",
+    "CandidateEvaluation",
+    "dataset_sha256",
+    "default_forecast_owned_genome",
+    "ForecastRatchetSummary",
+    "FrontierPromotion",
+    "FrontierStore",
+    "frontier_key",
+    "ImprovementCycleReport",
+    "ImprovementLoopConfig",
+    "improvement_config_with_population",
+    "load_run_archive",
+    "MutationConfig",
+    "promote_archive",
+    "run_forecast_owned_ratchet",
+    "SelectionConfig",
+    "SelectionOutcome",
+    "SelfImprovementLoop",
+    "StrategyGenome",
+    "StrategyMutator",
+    "StrategySelector",
+    "WalkForwardConfig",
+    "WalkForwardFoldReport",
+    "WalkForwardReport",
+    "WalkForwardSplit",
+    "write_run_archive",
+]

@@ -1,67 +1,114 @@
 # AutoPredict
 
-AutoPredict is a framework for prediction market trading agents. It connects to live Polymarket data, lets you supply your own probability estimates, and evaluates trade opportunities with execution-aware metrics.
+AutoPredict is a small framework for building, backtesting, and improving prediction-market agents without hiding synthetic data behind convenient defaults.
 
-## Quick start
+The current package has four production-facing surfaces:
+
+- `autopredict.live_scan`: read-only Polymarket Gamma/CLOB scanner for live public market data
+- `autopredict.prediction_market`: typed market snapshots, strategies, decisions, and venue metadata
+- `autopredict.evaluation`: proper scoring rules, calibration summaries, and scaffold backtests
+- `autopredict.self_improvement`: mutation, held-out promotion, archive writing, and frontier tracking
+
+Domain-specialist defaults are conservative by design. Finance, weather, politics, and generic specialists now use market-implied no-edge forecasts until you provide verified training/evaluation data. That prevents packaged examples from masquerading as production alpha.
+
+## Install
 
 ```bash
 git clone https://github.com/howdymary/autopredict.git
 cd autopredict
 python -m pip install -e .
-
-# Scan live markets
-python predict.py
-
-# Find structural edges in multi-outcome events
-python predict.py --events
-
-# Test your own prediction on a specific market
-python predict.py --fair 0.60 <condition_id>
 ```
 
-See [QUICKSTART.md](QUICKSTART.md) for a full walkthrough.
+For the optional authenticated Polymarket order adapter:
 
-## What it does
+```bash
+python -m pip install -e ".[polymarket]"
+```
 
-- **Live market scanning**: Fetches active markets and real order books from Polymarket (no auth needed for reads)
-- **Event-level analysis**: Finds multi-outcome events where sibling prices don't sum to 1.0 (structural mispricing)
-- **Execution-aware agent**: Given your `fair_prob`, evaluates edge, spread, liquidity, and book depth before recommending a trade
-- **Configurable strategy**: All agent parameters are JSON-tunable (edge thresholds, risk limits, sizing)
-- **Backtesting engine**: Test strategy changes against market data with slippage and fill rate simulation
+## Live Scan
 
-## Core pieces
+Use the live scanner to inspect public Polymarket data without placing orders or inventing fair values:
 
-- [predict.py](predict.py): Live market scanner and agent runner — the main entry point
-- [agent.py](agent.py): The mutable trading agent
-- [market_env.py](market_env.py): Order book simulation and execution metrics
-- [autopredict/markets/polymarket.py](autopredict/markets/polymarket.py): Polymarket API adapter (Gamma + CLOB)
-- [strategy_configs](strategy_configs): Tunable strategy parameters
-- [run_experiment.py](run_experiment.py): Backtest loop for offline evaluation
+```bash
+python -m autopredict.cli scan-live --limit 20 --top 5
+python -m autopredict.cli scan-live --events --limit 20 --top 5 --json
+python -m autopredict.cli safety-audit --config /path/to/your/live_trading.yaml
+```
 
-## What it measures
+Market scans report observed Gamma prices plus public CLOB bid/ask/depth when available. Missing order-book data stays `null`/`n/a`; the scanner does not fill gaps with estimates.
 
-Three groups of metrics:
+## Backtest
 
-- **Epistemic**: `brier_score`, `calibration_by_bucket`
-- **Financial**: `total_pnl`, `sharpe`, `max_drawdown`, `win_rate`
-- **Execution**: `avg_slippage_bps`, `fill_rate`, `market_impact_bps`, `implementation_shortfall_bps`
+Backtests require an explicit resolved-market dataset:
+
+```bash
+python -m autopredict.cli backtest --dataset /path/to/resolved_markets.json
+python -m autopredict.cli score-latest
+```
+
+Each record should represent real historical/resolved market data with the fields consumed by `autopredict.evaluation.load_resolved_snapshots`, such as `market_id`, `market_prob`, `outcome`, and venue/order-book fields. The legacy loop may score a provided `fair_prob` column, but AutoPredict does not ship one.
+
+## Improve
+
+Run the forecast-owned ratchet on explicit resolved data:
+
+```bash
+python -m autopredict.cli learn improve \
+  --dataset /path/to/resolved_markets.json \
+  --archive-dir state/meta_harness/archives \
+  --frontier-path state/meta_harness/frontier.json
+```
+
+The archive captures the run artifact, dataset hash, config, final genome, dependency versions, report cards, and warnings. The frontier accepts a run only when its explicit score improves for the same dataset hash, split mode, and strategy kind.
+
+## Data Policy
+
+AutoPredict does not package default market datasets, generated market snapshots, or fabricated domain evidence. Test fixtures live in tests only. Runtime commands either read live venue data or require user-provided real historical/resolved data.
+
+This matters for production use:
+
+- No command silently falls back to bundled sample markets.
+- No default domain model claims training support from unverified examples.
+- Missing live fields remain missing rather than being replaced by synthetic probabilities.
+- Meta-harness archives include dataset identity so improvements can be audited and reproduced.
+
+## Core Pieces
+
+- [autopredict/live_scan.py](autopredict/live_scan.py): read-only live Polymarket scanner
+- [autopredict/prediction_market](autopredict/prediction_market): strategy interfaces, signals, decisions, and registry
+- [autopredict/evaluation](autopredict/evaluation): scoring, calibration, and backtesting
+- [autopredict/self_improvement](autopredict/self_improvement): mutation, held-out promotion, archives, and frontier store
+- [autopredict/ingestion](autopredict/ingestion): normalization primitives for caller-provided evidence
+- [autopredict/domains](autopredict/domains): adapters and conservative no-edge specialist defaults
+- [market_env.py](market_env.py): legacy order-book simulation
+- [agent.py](agent.py): legacy mutable baseline agent
 
 ## Documentation
 
-- [QUICKSTART.md](QUICKSTART.md)
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
-- [docs/STRATEGIES.md](docs/STRATEGIES.md)
+Start with [QUICKSTART.md](QUICKSTART.md), then use:
+
 - [docs/BACKTESTING.md](docs/BACKTESTING.md)
-- [docs/METRICS.md](docs/METRICS.md)
-- [docs/fair_prob_guidelines.md](docs/fair_prob_guidelines.md)
-- [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+- [docs/LEARNING.md](docs/LEARNING.md)
+- [docs/STRATEGIES.md](docs/STRATEGIES.md)
 - [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)
+- [docs/fair_prob_guidelines.md](docs/fair_prob_guidelines.md)
 
-## Design philosophy
+## Scope Today
 
-The agent does NOT generate predictions. It optimizes execution given your forecast. If you think a market is at 54% and should be at 60%, the agent decides whether to trade, how much, and what order type — based on spread, depth, and your risk limits.
+Good today:
 
-The forecasting is your job. The execution is the agent's job.
+- read-only live Polymarket scanning
+- explicit-data backtesting
+- proper scoring, calibration, and grouped slice diagnostics
+- offline self-improvement with chronological, regime, and market-family holdouts
+- meta-harness archives and frontier promotion
+
+Intentionally limited:
+
+- live order execution is disabled unless you wire and enable a venue adapter
+- default domain specialists are neutral no-edge models until verified data is configured
+- self-improvement is offline and audit-oriented, not autonomous live trading
 
 ## License
 

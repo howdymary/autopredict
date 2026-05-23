@@ -38,13 +38,10 @@ best_params, best_result = tuner.tune()
 # Analyze recent performance
 python -m autopredict.cli learn analyze --log-dir state/trades --days 7
 
-# Tune parameters
-python scripts/learn_and_improve.py tune --config configs/strategy.json
-
-# Full improvement loop
-python scripts/learn_and_improve.py improve \
-  --config configs/strategy.json \
-  --auto-save
+# Forecast-owned improvement loop on explicit resolved data
+python -m autopredict.cli learn improve \
+  --dataset /path/to/resolved_markets.json \
+  --archive-dir state/meta_harness/archives
 ```
 
 ## Module Structure
@@ -65,13 +62,6 @@ python scripts/learn_and_improve.py improve \
 ## Documentation
 
 See [../../docs/LEARNING.md](../../docs/LEARNING.md) for the full learning guide.
-
-## Example
-
-Run the demo:
-```bash
-python examples/learning_demo.py
-```
 
 ## Tests
 

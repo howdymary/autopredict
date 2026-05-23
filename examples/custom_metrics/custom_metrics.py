@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import argparse
+import json
 import sys
+from dataclasses import fields
 from pathlib import Path
+from typing import Any
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
 
@@ -116,68 +120,54 @@ def calculate_all_custom_metrics(trades: list[TradeRecord]) -> dict[str, float]:
     return metrics
 
 
+def load_trade_records(path: Path) -> list[TradeRecord]:
+    """Load real trade records from JSON or JSONL.
+
+    JSON input may be either a list of trade objects or an object with a
+    ``trades`` list. JSONL input expects one trade object per non-empty line.
+    """
+
+    text = path.read_text(encoding="utf-8")
+    if path.suffix == ".jsonl":
+        raw_records: Any = [json.loads(line) for line in text.splitlines() if line.strip()]
+    else:
+        raw_records = json.loads(text)
+
+    if isinstance(raw_records, dict):
+        raw_records = raw_records.get("trades")
+
+    if not isinstance(raw_records, list):
+        raise ValueError("trade input must be a list or an object with a 'trades' list")
+
+    trade_fields = {field.name for field in fields(TradeRecord)}
+    trades: list[TradeRecord] = []
+    for index, raw in enumerate(raw_records, start=1):
+        if not isinstance(raw, dict):
+            raise ValueError(f"trade record {index} must be an object")
+
+        missing = sorted(trade_fields.difference(raw))
+        if missing:
+            raise ValueError(f"trade record {index} is missing required fields: {', '.join(missing)}")
+
+        trades.append(TradeRecord(**{name: raw[name] for name in trade_fields}))
+
+    return trades
+
+
+def main(argv: list[str] | None = None) -> int:
+    parser = argparse.ArgumentParser(description="Calculate custom metrics for real trade records")
+    parser.add_argument(
+        "--trades",
+        required=True,
+        help="Path to JSON or JSONL trade records produced from a real backtest or execution log",
+    )
+    args = parser.parse_args(argv)
+
+    metrics = calculate_all_custom_metrics(load_trade_records(Path(args.trades)))
+
+    print(json.dumps(metrics, indent=2, sort_keys=True))
+    return 0
+
+
 if __name__ == "__main__":
-    # Demonstrate custom metrics on sample trades
-    from autopredict.market_env import TradeRecord
-
-    sample_trades = [
-        TradeRecord(
-            market_id="test1",
-            side="buy",
-            order_type="market",
-            requested_size=10.0,
-            filled_size=10.0,
-            fill_price=0.52,
-            mid_at_decision=0.50,
-            next_mid_price=0.55,
-            outcome=1,
-            pnl=4.8,  # Win
-            slippage_bps=200.0,
-            market_impact_bps=100.0,
-            implementation_shortfall_bps=200.0,
-            fill_rate=1.0,
-        ),
-        TradeRecord(
-            market_id="test2",
-            side="sell",
-            order_type="limit",
-            requested_size=10.0,
-            filled_size=10.0,
-            fill_price=0.48,
-            mid_at_decision=0.50,
-            next_mid_price=0.45,
-            outcome=0,
-            pnl=4.8,  # Win
-            slippage_bps=-200.0,
-            market_impact_bps=0.0,
-            implementation_shortfall_bps=-200.0,
-            fill_rate=1.0,
-        ),
-        TradeRecord(
-            market_id="test3",
-            side="buy",
-            order_type="market",
-            requested_size=10.0,
-            filled_size=10.0,
-            fill_price=0.52,
-            mid_at_decision=0.50,
-            next_mid_price=0.45,
-            outcome=0,
-            pnl=-5.2,  # Loss
-            slippage_bps=200.0,
-            market_impact_bps=100.0,
-            implementation_shortfall_bps=200.0,
-            fill_rate=1.0,
-        ),
-    ]
-
-    metrics = calculate_all_custom_metrics(sample_trades)
-
-    print("Custom Metrics Demo:")
-    print(f"  Profit Factor: {metrics['profit_factor']:.2f}")
-    print(f"  Max Consecutive Wins: {int(metrics['max_consecutive_wins'])}")
-    print(f"  Max Consecutive Losses: {int(metrics['max_consecutive_losses'])}")
-    print(f"  Current Streak: {int(metrics['current_streak'])}")
-    print(f"  Avg Win Size: ${metrics['avg_win_size']:.2f}")
-    print(f"  Avg Loss Size: ${metrics['avg_loss_size']:.2f}")
-    print(f"  Win/Loss Ratio: {metrics['win_loss_ratio']:.2f}")
+    raise SystemExit(main())

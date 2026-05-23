@@ -18,7 +18,7 @@ _root = Path(__file__).resolve().parent.parent.parent
 if str(_root) not in sys.path:
     sys.path.insert(0, str(_root))
 
-from market_env import ForecastRecord, TradeRecord
+from autopredict.market_env import ForecastRecord, TradeRecord
 
 EPSILON = 1e-9
 

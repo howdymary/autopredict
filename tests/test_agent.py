@@ -420,3 +420,19 @@ class TestAutoPredictAgent:
         analysis = baseline_agent.analyze_performance(metrics, guidance="")
 
         assert analysis["weakness"] == "limit_fill_quality"
+
+    def test_analyze_performance_external_forecast_quality(
+        self, baseline_agent: AutoPredictAgent
+    ):
+        """External forecast metrics should not be attributed to agent calibration."""
+        metrics = {
+            "avg_slippage_bps": 10.0,
+            "fill_rate": 0.65,
+            "brier_score": 0.25,
+            "max_drawdown": 50.0,
+            "forecast_source": "dataset_fair_prob",
+        }
+
+        analysis = baseline_agent.analyze_performance(metrics, guidance="")
+
+        assert analysis["weakness"] == "forecast_input_quality"

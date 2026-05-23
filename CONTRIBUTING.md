@@ -54,9 +54,7 @@ source venv/bin/activate  # On Windows: venv\Scripts\activate
 3. **Install development dependencies**
 
 ```bash
-# Core dependencies (stdlib only - no external deps)
-# Install optional dev tools
-pip install pytest pytest-cov black mypy
+python -m pip install -e ".[dev]"
 ```
 
 4. **Verify setup**
@@ -81,6 +79,9 @@ autopredict/
 ├── run_experiment.py     # Backtest harness
 ├── autopredict/          # Package structure
 │   ├── core/             # Core components
+│   ├── prediction_market/ # Scaffold-native agent interfaces
+│   ├── evaluation/        # Proper scoring and scaffold backtests
+│   ├── self_improvement/  # Mutation and selection loops
 │   ├── strategies/       # Strategy implementations
 │   ├── markets/          # Market adapters
 │   └── learning/         # Learning algorithms

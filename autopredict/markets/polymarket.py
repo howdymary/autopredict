@@ -1,806 +1,843 @@
-"""Polymarket adapter for fetching market data and placing orders.
+"""Polymarket adapter with real public market-data access and live-order plumbing.
 
-Polymarket is the largest decentralized prediction market, running on Polygon.
-This adapter integrates with two APIs:
+This adapter intentionally splits the Polymarket integration into two layers:
 
-  - Gamma API (https://gamma-api.polymarket.com) — public, read-only market data
-  - CLOB API (https://clob.polymarket.com) — authenticated order book + trading
+1. Public market discovery and order-book reads use the documented Gamma and CLOB
+   HTTP APIs directly, so read-only functionality works without credentials.
+2. Authenticated trading uses the official ``py_clob_client`` when available.
 
-Credentials are loaded exclusively from environment variables:
-  POLYMARKET_API_KEY      — CLOB API key (from create_or_derive_api_creds)
-  POLYMARKET_API_SECRET   — CLOB API secret
-  POLYMARKET_PASSPHRASE   — CLOB API passphrase
-  POLYMARKET_PK           — Wallet private key (for signing, optional)
-  POLYMARKET_FUNDER       — Funder address (optional, for proxy wallets)
-
-API Documentation: https://docs.polymarket.com/
+The goal is to provide a real venue boundary instead of a placeholder while
+remaining honest about verification limits: read-only behavior is exercised
+directly against Polymarket's public endpoints, while authenticated order
+placement still depends on valid user credentials and the official trading
+client being installed in the runtime environment.
 """
 
 from __future__ import annotations
 
+from dataclasses import dataclass
+from datetime import datetime, timezone
 import json
-import logging
 import os
 import time
-import urllib.error
-import urllib.parse
-import urllib.request
-from dataclasses import dataclass, field
-from datetime import datetime, timezone
-from typing import Any, Iterator
+from typing import Any
 
-logger = logging.getLogger(__name__)
+import requests
 
-# ---------------------------------------------------------------------------
-# Constants
-# ---------------------------------------------------------------------------
-
-GAMMA_API_BASE = "https://gamma-api.polymarket.com"
-CLOB_API_BASE = "https://clob.polymarket.com"
-
-# Rate limiting defaults
-DEFAULT_MAX_REQUESTS_PER_MINUTE = 60
-DEFAULT_BACKOFF_BASE = 1.0     # seconds
-DEFAULT_BACKOFF_MAX = 30.0     # seconds
-DEFAULT_BACKOFF_FACTOR = 2.0
-DEFAULT_MAX_RETRIES = 3
-DEFAULT_TIMEOUT = 15           # seconds
+from autopredict.config.loader import is_missing_env_placeholder
+from autopredict.core.types import (
+    ExecutionReport,
+    MarketCategory,
+    MarketState,
+    Order,
+    OrderSide,
+    OrderType,
+)
 
 
-# ---------------------------------------------------------------------------
-# Rate limiter
-# ---------------------------------------------------------------------------
+DEFAULT_CLOB_URL = "https://clob.polymarket.com"
+DEFAULT_STAGING_CLOB_URL = "https://clob-staging.polymarket.com"
+DEFAULT_GAMMA_URL = "https://gamma-api.polymarket.com"
+DEFAULT_CHAIN_ID = 137
+BUY = "BUY"
 
-class _RateLimiter:
-    """Token-bucket rate limiter with exponential backoff on throttle."""
-
-    def __init__(
-        self,
-        max_per_minute: int = DEFAULT_MAX_REQUESTS_PER_MINUTE,
-        backoff_base: float = DEFAULT_BACKOFF_BASE,
-        backoff_max: float = DEFAULT_BACKOFF_MAX,
-        backoff_factor: float = DEFAULT_BACKOFF_FACTOR,
-    ) -> None:
-        self._interval = 60.0 / max(max_per_minute, 1)
-        self._last_request: float = -(self._interval + 1.0)  # allow immediate first request
-        self._backoff_base = backoff_base
-        self._backoff_max = backoff_max
-        self._backoff_factor = backoff_factor
-        self._consecutive_throttles = 0
-
-    def wait(self) -> None:
-        """Block until the next request is allowed."""
-        now = time.monotonic()
-        wait_time = self._interval - (now - self._last_request)
-        if self._consecutive_throttles > 0:
-            backoff = min(
-                self._backoff_base * (self._backoff_factor ** self._consecutive_throttles),
-                self._backoff_max,
-            )
-            wait_time = max(wait_time, backoff)
-        if wait_time > 0:
-            time.sleep(wait_time)
-        self._last_request = time.monotonic()
-
-    def record_success(self) -> None:
-        self._consecutive_throttles = 0
-
-    def record_throttle(self) -> None:
-        self._consecutive_throttles += 1
-
-
-# ---------------------------------------------------------------------------
-# HTTP helpers (stdlib only — no requests/httpx dependency)
-# ---------------------------------------------------------------------------
-
-def _http_get(
-    url: str,
-    *,
-    headers: dict[str, str] | None = None,
-    timeout: float = DEFAULT_TIMEOUT,
-    rate_limiter: _RateLimiter | None = None,
-    max_retries: int = DEFAULT_MAX_RETRIES,
-) -> dict | list:
-    """GET with retry + backoff.  Returns parsed JSON."""
-    last_exc: Exception | None = None
-    for attempt in range(max_retries + 1):
-        if rate_limiter is not None:
-            rate_limiter.wait()
-        default_headers = {"User-Agent": "autopredict/0.1", "Accept": "application/json"}
-        if headers:
-            default_headers.update(headers)
-        req = urllib.request.Request(url, headers=default_headers)
-        try:
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
-                body = json.loads(resp.read().decode())
-                if rate_limiter is not None:
-                    rate_limiter.record_success()
-                return body
-        except urllib.error.HTTPError as exc:
-            last_exc = exc
-            if exc.code == 429 or exc.code >= 500:
-                logger.warning("HTTP %d on %s (attempt %d)", exc.code, url, attempt + 1)
-                if rate_limiter is not None:
-                    rate_limiter.record_throttle()
-                continue
-            raise
-        except (urllib.error.URLError, TimeoutError, OSError) as exc:
-            last_exc = exc
-            logger.warning("Network error on %s (attempt %d): %s", url, attempt + 1, exc)
-            if rate_limiter is not None:
-                rate_limiter.record_throttle()
-            continue
-    raise ConnectionError(f"Failed after {max_retries + 1} attempts: {last_exc}") from last_exc
-
-
-# ---------------------------------------------------------------------------
-# Data classes for adapter results
-# ---------------------------------------------------------------------------
-
-@dataclass(frozen=True)
-class PolymarketEvent:
-    """A Polymarket event (may contain multiple binary markets)."""
-    event_id: str
-    title: str
-    slug: str
-    markets: list[PolymarketMarket]
+_CATEGORY_KEYWORDS: tuple[tuple[MarketCategory, tuple[str, ...]], ...] = (
+    (
+        MarketCategory.CRYPTO,
+        ("bitcoin", "btc", "ethereum", "eth", "solana", "sol", "crypto", "doge"),
+    ),
+    (
+        MarketCategory.POLITICS,
+        (
+            "election",
+            "president",
+            "trump",
+            "biden",
+            "senate",
+            "house",
+            "approval",
+            "poll",
+            "vote",
+            "campaign",
+            "ceasefire",
+            "ukraine",
+            "russia",
+            "israel",
+            "geopolitics",
+            "treaty",
+        ),
+    ),
+    (
+        MarketCategory.ECONOMICS,
+        (
+            "inflation",
+            "cpi",
+            "fed",
+            "rates",
+            "recession",
+            "gdp",
+            "payrolls",
+            "tariff",
+            "economy",
+            "macro",
+        ),
+    ),
+    (
+        MarketCategory.SPORTS,
+        (
+            "nba",
+            "nfl",
+            "mlb",
+            "nhl",
+            "champions",
+            "world cup",
+            "super bowl",
+            "march madness",
+            "wimbledon",
+            "f1",
+        ),
+    ),
+    (
+        MarketCategory.SCIENCE,
+        ("science", "launch", "spacex", "nasa", "fda", "trial", "breakthrough"),
+    ),
+    (
+        MarketCategory.ENTERTAINMENT,
+        ("oscar", "movie", "album", "box office", "tv", "grammy", "emmy"),
+    ),
+)
 
 
 @dataclass(frozen=True)
-class PolymarketMarket:
-    """A single Polymarket binary market (one YES/NO outcome)."""
-    condition_id: str
-    question: str
-    token_id_yes: str
-    token_id_no: str
-    market_prob: float
-    volume_24h: float
-    liquidity: float
-    end_date: str
-    active: bool
-    closed: bool
-    category: str
-    best_bid: float
-    best_ask: float
-    spread: float
-    order_book_bids: list[tuple[float, float]]
-    order_book_asks: list[tuple[float, float]]
-    metadata: dict[str, Any] = field(default_factory=dict)
+class _ResolvedToken:
+    token_id: str
+    outcome: str
+    displayed_price: float
+    order_side: str = BUY
 
-
-# ---------------------------------------------------------------------------
-# Main adapter
-# ---------------------------------------------------------------------------
 
 class PolymarketAdapter:
-    """Adapter for Polymarket prediction market.
-
-    Supports two modes:
-      - **Read-only** (no credentials): fetch markets, order books, prices
-      - **Trading** (requires CLOB credentials): place/cancel orders, positions
-
-    Example:
-        >>> adapter = PolymarketAdapter()
-        >>> markets = adapter.get_active_markets(limit=10)
-        >>> for m in markets:
-        ...     print(f"{m.question}: {m.market_prob:.0%}")
-    """
+    """Real Polymarket boundary with public data access and optional live trading."""
 
     def __init__(
         self,
+        api_key: str | None = None,
+        api_secret: str | None = None,
+        api_passphrase: str | None = None,
+        private_key: str | None = None,
+        funder: str | None = None,
         *,
-        gamma_base: str = GAMMA_API_BASE,
-        clob_base: str = CLOB_API_BASE,
-        max_requests_per_minute: int = DEFAULT_MAX_REQUESTS_PER_MINUTE,
-        timeout: float = DEFAULT_TIMEOUT,
+        signature_type: int = 0,
+        chain_id: int = DEFAULT_CHAIN_ID,
+        testnet: bool = False,
+        base_url: str | None = None,
+        gamma_url: str | None = None,
+        timeout_seconds: float = 30.0,
+        max_retries: int = 3,
+        session: requests.Session | None = None,
+        trading_client: Any | None = None,
     ) -> None:
-        self._gamma_base = gamma_base.rstrip("/")
-        self._clob_base = clob_base.rstrip("/")
-        self._timeout = timeout
-        self._limiter = _RateLimiter(max_per_minute=max_requests_per_minute)
+        self.api_key = api_key
+        self.api_secret = api_secret
+        self.api_passphrase = api_passphrase
+        self.private_key = private_key
+        self.funder = funder
+        self.signature_type = int(signature_type)
+        self.chain_id = int(chain_id)
+        self.testnet = bool(testnet)
+        self.base_url = base_url or (
+            DEFAULT_STAGING_CLOB_URL if self.testnet else DEFAULT_CLOB_URL
+        )
+        self.gamma_url = gamma_url or DEFAULT_GAMMA_URL
+        self.timeout_seconds = float(timeout_seconds)
+        self.max_retries = int(max_retries)
+        self.session = session or requests.Session()
+        self.session.headers.setdefault("User-Agent", "autopredict-polymarket/0.1")
+        self._trading_client = trading_client
 
-        # CLOB credentials (loaded from env, never hardcoded)
-        self._api_key = os.environ.get("POLYMARKET_API_KEY")
-        self._api_secret = os.environ.get("POLYMARKET_API_SECRET")
-        self._passphrase = os.environ.get("POLYMARKET_PASSPHRASE")
-        self._private_key = os.environ.get("POLYMARKET_PK")
-        self._funder = os.environ.get("POLYMARKET_FUNDER")
+    @classmethod
+    def from_env(
+        cls,
+        *,
+        api_key: str | None = None,
+        api_secret: str | None = None,
+        api_passphrase: str | None = None,
+        private_key: str | None = None,
+        funder: str | None = None,
+        signature_type: int | str | None = None,
+        chain_id: int | str | None = None,
+        testnet: bool = False,
+        base_url: str | None = None,
+        gamma_url: str | None = None,
+        timeout_seconds: float = 30.0,
+        max_retries: int = 3,
+        session: requests.Session | None = None,
+        trading_client: Any | None = None,
+    ) -> "PolymarketAdapter":
+        """Create an adapter from explicit values plus Polymarket env defaults."""
 
-        # Optional: py-clob-client for authenticated trading
-        self._clob_client: Any | None = None
+        return cls(
+            api_key=api_key or os.getenv("POLYMARKET_API_KEY"),
+            api_secret=api_secret or os.getenv("POLYMARKET_API_SECRET"),
+            api_passphrase=api_passphrase or os.getenv("POLYMARKET_API_PASSPHRASE"),
+            private_key=private_key or os.getenv("POLYMARKET_PRIVATE_KEY"),
+            funder=funder or os.getenv("POLYMARKET_FUNDER"),
+            signature_type=int(signature_type or os.getenv("POLYMARKET_SIGNATURE_TYPE", "0")),
+            chain_id=int(chain_id or os.getenv("POLYMARKET_CHAIN_ID", str(DEFAULT_CHAIN_ID))),
+            testnet=testnet,
+            base_url=base_url or os.getenv("POLYMARKET_CLOB_URL"),
+            gamma_url=gamma_url or os.getenv("POLYMARKET_GAMMA_URL"),
+            timeout_seconds=timeout_seconds,
+            max_retries=max_retries,
+            session=session,
+            trading_client=trading_client,
+        )
 
-    # ------------------------------------------------------------------
-    # Credential helpers
-    # ------------------------------------------------------------------
+    def validate_credentials(self, *, require_trading: bool = True) -> None:
+        """Validate credential presence for authenticated trading."""
 
-    @property
-    def has_clob_credentials(self) -> bool:
-        """True if CLOB API credentials are available."""
-        return bool(self._api_key and self._api_secret and self._passphrase)
+        if not require_trading:
+            return True
 
-    def _ensure_clob_client(self) -> Any:
-        """Lazily initialize the py-clob-client ClobClient."""
-        if self._clob_client is not None:
-            return self._clob_client
-
-        if not self.has_clob_credentials:
-            raise RuntimeError(
-                "CLOB credentials required. Set POLYMARKET_API_KEY, "
-                "POLYMARKET_API_SECRET, and POLYMARKET_PASSPHRASE env vars."
+        required = {
+            "POLYMARKET_API_KEY": self.api_key,
+            "POLYMARKET_API_SECRET": self.api_secret,
+            "POLYMARKET_API_PASSPHRASE": self.api_passphrase,
+            "POLYMARKET_PRIVATE_KEY": self.private_key,
+            "POLYMARKET_FUNDER": self.funder,
+        }
+        missing = [
+            env_name
+            for env_name, value in required.items()
+            if not value or is_missing_env_placeholder(value)
+        ]
+        if missing:
+            raise ValueError(
+                "Polymarket live trading requires credentials for: "
+                + ", ".join(sorted(missing))
             )
+        if self.signature_type not in (0, 1, 2):
+            raise ValueError("Polymarket signature_type must be one of 0, 1, or 2")
+        if self.chain_id <= 0:
+            raise ValueError("Polymarket chain_id must be positive")
+        return True
+
+    def check_connectivity(self) -> dict[str, Any]:
+        """Return a small read-only health snapshot from Polymarket."""
+
+        response = self._request_json("GET", f"{self.base_url}/ok")
+        return {"ok": response, "base_url": self.base_url, "gamma_url": self.gamma_url}
+
+    def get_markets(self, filters: dict | None = None) -> list[MarketState]:
+        """Fetch active markets from Gamma and enrich them with live order books."""
+
+        filters = dict(filters or {})
+        limit = int(filters.pop("limit", 25))
+        min_liquidity = float(filters.pop("min_liquidity", 0.0))
+        min_volume = float(filters.pop("min_volume", 0.0))
+        active_only = bool(filters.pop("active_only", True))
+        category_filter = str(filters.pop("category", "")).strip().lower()
+        slug_filter = filters.pop("slug", None)
+
+        params: dict[str, Any] = {
+            "limit": min(limit, 100),
+            "offset": 0,
+            "active": str(active_only).lower(),
+            "closed": "false",
+        }
+        if slug_filter:
+            params["slug"] = slug_filter
+
+        collected: list[MarketState] = []
+        while len(collected) < limit:
+            raw_markets = self._request_json("GET", f"{self.gamma_url}/markets", params=params)
+            if not isinstance(raw_markets, list) or not raw_markets:
+                break
+
+            for raw_market in raw_markets:
+                try:
+                    market = self._convert_market(raw_market)
+                except ValueError:
+                    continue
+                if market.total_liquidity < min_liquidity:
+                    continue
+                if market.volume_24h < min_volume:
+                    continue
+                if category_filter and market.category.value != category_filter:
+                    continue
+                collected.append(market)
+                if len(collected) >= limit:
+                    break
+
+            params["offset"] += len(raw_markets)
+
+        return collected
+
+    def get_market(self, market_id: str) -> MarketState | None:
+        """Fetch a single market by prefixed condition id, raw id, slug, or condition id."""
+
+        raw_market = self._find_raw_market(market_id)
+        if raw_market is None:
+            return None
+        return self._convert_market(raw_market)
+
+    def place_order(self, order: Order) -> ExecutionReport:
+        """Place an order on Polymarket using the official CLOB client."""
+
+        self.validate_credentials(require_trading=True)
+
+        raw_market = self._find_raw_market(order.market_id)
+        if raw_market is None:
+            raise ValueError(f"Could not resolve Polymarket market '{order.market_id}'")
+
+        token = self._resolve_token_for_order(raw_market, order)
+        book = self._get_order_book(token.token_id)
+        tick_size = self._extract_tick_size(raw_market, book)
+        min_order_size = self._extract_min_order_size(raw_market, book)
+        if order.size < min_order_size:
+            raise ValueError(
+                f"Order size {order.size} is below Polymarket minimum order size {min_order_size}"
+            )
+
+        price = self._resolve_order_price(order, book, token, tick_size)
+        client = self._get_trading_client()
+        order_args, venue_order_type, create_options = self._build_live_order_args(
+            client=client,
+            token=token,
+            order=order,
+            price=price,
+            tick_size=tick_size,
+            raw_market=raw_market,
+        )
+
+        if create_options is None:
+            signed_order = client.create_order(order_args)
+        else:
+            signed_order = client.create_order(order_args, create_options)
+        response = client.post_order(signed_order, venue_order_type)
+        return self._convert_execution_report(
+            order=order,
+            response=response,
+            token=token,
+            venue_price=price,
+            semantic_price=(price if token.outcome == "YES" else 1.0 - price),
+            submitted_price=price,
+        )
+
+    def submit_order(self, order: Order) -> ExecutionReport:
+        """Compatibility alias for live-trading adapters."""
+
+        return self.place_order(order)
+
+    def cancel_order(self, market_id: str, order_id: str) -> bool:
+        """Cancel an outstanding Polymarket order by order id."""
+
+        del market_id
+        self.validate_credentials(require_trading=True)
+        response = self._get_trading_client().cancel(order_id)
+        if isinstance(response, dict):
+            if "success" in response:
+                return bool(response["success"])
+            if "canceled" in response:
+                return bool(response["canceled"])
+        return bool(response)
+
+    def get_position(self, market_id: str) -> float:
+        """Return an approximate YES-equivalent position from authenticated trades."""
+
+        self.validate_credentials(require_trading=True)
+        raw_market = self._find_raw_market(market_id)
+        if raw_market is None:
+            return 0.0
+
+        yes_token, no_token = self._resolve_yes_no_tokens(raw_market)
+        trades = self._get_trading_client().get_trades()
+        if not isinstance(trades, list):
+            return 0.0
+
+        yes_position = 0.0
+        no_position = 0.0
+        for trade in trades:
+            asset_id = str(trade.get("asset_id") or trade.get("assetId") or "")
+            size = self._coerce_float(
+                trade.get("size")
+                or trade.get("matchedAmount")
+                or trade.get("takingAmount")
+                or trade.get("makerAmount")
+                or 0.0
+            )
+            side = str(trade.get("side", "")).upper()
+            signed = size if side == BUY else -size
+            if yes_token and asset_id == yes_token:
+                yes_position += signed
+            if no_token and asset_id == no_token:
+                no_position += signed
+        return yes_position - no_position
+
+    def get_balance(self) -> float:
+        """Return available collateral balance from Polymarket when authenticated."""
+
+        self.validate_credentials(require_trading=True)
+        client = self._get_trading_client()
+        params = self._build_balance_allowance_params(client)
+        response = client.get_balance_allowance(params)
+        for key in ("balance", "available", "availableBalance"):
+            if key in response:
+                return self._coerce_float(response[key])
+        if "balance" in response.get("data", {}):
+            return self._coerce_float(response["data"]["balance"])
+        return 0.0
+
+    def _convert_market(self, raw_market: dict[str, Any]) -> MarketState:
+        condition_id = str(raw_market["conditionId"])
+        question = str(raw_market["question"]).strip()
+        market_prob = self._extract_yes_probability(raw_market)
+        if market_prob is None:
+            raise ValueError(f"Polymarket market {condition_id} is missing a YES outcome price")
+        yes_token_id, no_token_id = self._resolve_yes_no_tokens(raw_market)
+        if not yes_token_id:
+            raise ValueError(f"Polymarket market {condition_id} is missing a YES token id")
+        book = self._get_order_book(yes_token_id)
+        best_bid = self._best_price(book.get("bids", ()))
+        best_ask = self._best_price(book.get("asks", ()))
+        tick_size = self._extract_tick_size(raw_market, book)
+        if best_bid is None:
+            raise ValueError(f"Polymarket market {condition_id} is missing CLOB bids")
+        if best_ask is None:
+            raise ValueError(f"Polymarket market {condition_id} is missing CLOB asks")
+
+        expiry = self._parse_timestamp(raw_market.get("endDate"))
+        if expiry is None:
+            raise ValueError(f"Polymarket market {condition_id} is missing endDate")
+        category = self._infer_category(raw_market)
+        bid_liquidity = self._total_size(book.get("bids", ()))
+        ask_liquidity = self._total_size(book.get("asks", ()))
+        clob_token_ids = self._parse_json_list(raw_market.get("clobTokenIds"))
+        outcomes = self._parse_json_list(raw_market.get("outcomes"))
+
+        return MarketState(
+            market_id=f"polymarket-{condition_id}",
+            question=question,
+            market_prob=market_prob,
+            expiry=expiry,
+            category=category,
+            best_bid=best_bid,
+            best_ask=best_ask,
+            bid_liquidity=bid_liquidity,
+            ask_liquidity=ask_liquidity,
+            volume_24h=self._coerce_float(raw_market.get("volume")),
+            num_traders=int(self._coerce_float(raw_market.get("numTraders", 0))),
+            metadata={
+                "venue": "polymarket",
+                "market_id": str(raw_market.get("id", "")),
+                "condition_id": condition_id,
+                "slug": raw_market.get("slug"),
+                "outcomes": outcomes,
+                "token_ids": clob_token_ids,
+                "yes_token_id": yes_token_id,
+                "no_token_id": no_token_id,
+                "order_min_size": self._extract_min_order_size(raw_market, book),
+                "tick_size": tick_size,
+                "accepting_orders": bool(raw_market.get("acceptingOrders", True)),
+                "neg_risk": bool(raw_market.get("negRisk", False)),
+                "raw_market": raw_market,
+            },
+        )
+
+    def _find_raw_market(self, market_identifier: str) -> dict[str, Any] | None:
+        target = str(market_identifier).removeprefix("polymarket-")
+        offset = 0
+        limit = 100
+        while True:
+            raw_markets = self._request_json(
+                "GET",
+                f"{self.gamma_url}/markets",
+                params={"limit": limit, "offset": offset, "active": "true", "closed": "false"},
+            )
+            if not isinstance(raw_markets, list) or not raw_markets:
+                break
+            for raw_market in raw_markets:
+                if self._raw_market_matches(raw_market, target):
+                    return raw_market
+            offset += len(raw_markets)
+            if len(raw_markets) < limit:
+                break
+        return None
+
+    @staticmethod
+    def _raw_market_matches(raw_market: dict[str, Any], target: str) -> bool:
+        return target in {
+            str(raw_market.get("id", "")),
+            str(raw_market.get("conditionId", "")),
+            str(raw_market.get("slug", "")),
+        }
+
+    def _get_order_book(self, token_id: str | None) -> dict[str, Any]:
+        if not token_id:
+            return {"bids": [], "asks": []}
+        return self._request_json("GET", f"{self.base_url}/book", params={"token_id": token_id})
+
+    def _resolve_token_for_order(self, raw_market: dict[str, Any], order: Order) -> _ResolvedToken:
+        yes_token, no_token = self._resolve_yes_no_tokens(raw_market)
+        yes_price = self._extract_yes_probability(raw_market)
+        if yes_price is None:
+            raise ValueError("Polymarket market is missing a YES outcome price")
+
+        if order.side == OrderSide.BUY:
+            if not yes_token:
+                raise ValueError("Polymarket market is missing a YES token id")
+            return _ResolvedToken(token_id=yes_token, outcome="YES", displayed_price=yes_price)
+
+        if not no_token:
+            raise ValueError(
+                "Polymarket sell orders are mapped to buying the NO token, "
+                "but this market did not expose a NO token id"
+            )
+        return _ResolvedToken(
+            token_id=no_token,
+            outcome="NO",
+            displayed_price=1.0 - yes_price,
+        )
+
+    def _build_live_order_args(
+        self,
+        *,
+        client: Any,
+        token: _ResolvedToken,
+        order: Order,
+        price: float,
+        tick_size: float,
+        raw_market: dict[str, Any],
+    ) -> tuple[Any, Any, Any | None]:
+        order_args_type = self._client_attr(client, "OrderArgs")
+        order_type_enum = self._client_attr(client, "OrderType")
+
+        order_args = order_args_type(
+            token_id=token.token_id,
+            price=price,
+            size=order.size,
+            side=BUY,
+        )
+        venue_order_type = order_type_enum.GTC
+        if order.order_type == OrderType.MARKET:
+            venue_order_type = getattr(order_type_enum, "FAK", order_type_enum.GTC)
+
+        options_type = self._client_optional_attr(client, "PartialCreateOrderOptions")
+        if options_type is not None:
+            options = options_type(
+                tick_size=self._format_tick_size(tick_size),
+                neg_risk=bool(raw_market.get("negRisk", False)),
+            )
+            return order_args, venue_order_type, options
+        return order_args, venue_order_type, None
+
+    def _resolve_order_price(
+        self,
+        order: Order,
+        book: dict[str, Any],
+        token: _ResolvedToken,
+        tick_size: float,
+    ) -> float:
+        if order.order_type == OrderType.LIMIT:
+            if order.limit_price is None:
+                raise ValueError("Polymarket limit orders require limit_price")
+            if order.side == OrderSide.SELL:
+                price = 1.0 - float(order.limit_price)
+            else:
+                price = float(order.limit_price)
+            return self._clamp_probability(self._round_to_tick(price, tick_size))
+
+        best_ask = self._best_price(book.get("asks", ()))
+        if best_ask is None:
+            raise ValueError(
+                f"Polymarket market is missing executable asks for {token.outcome} token"
+            )
+        return self._clamp_probability(self._round_to_tick(best_ask, tick_size))
+
+    def _convert_execution_report(
+        self,
+        *,
+        order: Order,
+        response: Any,
+        token: _ResolvedToken,
+        venue_price: float,
+        semantic_price: float,
+        submitted_price: float,
+    ) -> ExecutionReport:
+        payload = response if isinstance(response, dict) else {"raw_response": response}
+        status = str(payload.get("status", "")).lower()
+        error_message = payload.get("errorMsg") or payload.get("error")
+        filled_size = 0.0
+        avg_fill_price: float | None = None
+        if status in {"filled", "matched"}:
+            filled_size = order.size
+            avg_fill_price = semantic_price
+        slippage_bps = 0.0
+        if avg_fill_price is not None and order.limit_price is not None and order.limit_price > 0:
+            if order.side == OrderSide.BUY:
+                slippage_bps = max(avg_fill_price - order.limit_price, 0.0) / order.limit_price * 10_000.0
+            else:
+                slippage_bps = max(order.limit_price - avg_fill_price, 0.0) / order.limit_price * 10_000.0
+
+        return ExecutionReport(
+            order=order,
+            filled_size=filled_size,
+            avg_fill_price=avg_fill_price,
+            fills=[(avg_fill_price, filled_size)] if avg_fill_price is not None and filled_size > 0 else [],
+            slippage_bps=slippage_bps,
+            fee_total=0.0,
+            execution_mode="live",
+            error_message=error_message,
+            metadata={
+                "venue": "polymarket",
+                "status": payload.get("status"),
+                "order_id": payload.get("orderID") or payload.get("id"),
+                "token_id": token.token_id,
+                "outcome": token.outcome,
+                "submitted_price": submitted_price,
+                "venue_price": venue_price,
+                "semantic_price": semantic_price,
+                "raw_response": payload,
+            },
+        )
+
+    def _get_trading_client(self) -> Any:
+        if self._trading_client is not None:
+            return self._trading_client
 
         try:
             from py_clob_client.client import ClobClient
+            from py_clob_client.clob_types import ApiCreds, BalanceAllowanceParams, OrderArgs, OrderType
+            try:
+                from py_clob_client.clob_types import PartialCreateOrderOptions
+            except ImportError:
+                PartialCreateOrderOptions = None
         except ImportError as exc:
-            raise ImportError(
-                "py-clob-client is required for trading. "
-                "Install with: pip install py-clob-client"
+            raise RuntimeError(
+                "Authenticated Polymarket trading requires the official py_clob_client "
+                "package. Install it in the runtime environment before placing orders."
             ) from exc
 
-        self._clob_client = ClobClient(
-            host=self._clob_base,
-            chain_id=137,  # Polygon mainnet
-            key=self._private_key,
-            creds={
-                "apiKey": self._api_key,
-                "secret": self._api_secret,
-                "passphrase": self._passphrase,
-            },
-            signature_type=0,  # 0=EOA, 1=Magic, 2=Safe
-            funder=self._funder,
+        creds = ApiCreds(
+            api_key=str(self.api_key),
+            api_secret=str(self.api_secret),
+            api_passphrase=str(self.api_passphrase),
         )
-        return self._clob_client
+        client = ClobClient(
+            host=self.base_url,
+            chain_id=self.chain_id,
+            key=str(self.private_key),
+            creds=creds,
+            signature_type=self.signature_type,
+            funder=str(self.funder),
+        )
+        client.OrderArgs = OrderArgs
+        client.OrderType = OrderType
+        client.BalanceAllowanceParams = BalanceAllowanceParams
+        client.PartialCreateOrderOptions = PartialCreateOrderOptions
+        self._trading_client = client
+        return client
 
-    # ------------------------------------------------------------------
-    # Gamma API — public, read-only
-    # ------------------------------------------------------------------
+    def _build_balance_allowance_params(self, client: Any) -> Any:
+        params_type = self._client_attr(client, "BalanceAllowanceParams")
+        asset_type = self._client_optional_attr(client, "AssetType")
+        if asset_type is not None:
+            return params_type(asset_type=asset_type.COLLATERAL, signature_type=self.signature_type)
+        return params_type(signature_type=self.signature_type)
 
-    def get_active_markets(
+    @staticmethod
+    def _client_attr(client: Any, name: str) -> Any:
+        value = getattr(client, name, None)
+        if value is None:
+            raise RuntimeError(f"Polymarket trading client is missing required attribute {name!r}")
+        return value
+
+    @staticmethod
+    def _client_optional_attr(client: Any, name: str) -> Any:
+        return getattr(client, name, None)
+
+    def _request_json(
         self,
+        method: str,
+        url: str,
         *,
-        limit: int = 100,
-        offset: int = 0,
-        category: str | None = None,
-        min_volume: float = 0.0,
-        min_liquidity: float = 0.0,
-    ) -> list[PolymarketMarket]:
-        """Fetch active markets from the Gamma API.
-
-        Args:
-            limit: Max markets to return (API max ~100 per page).
-            offset: Pagination offset.
-            category: Filter by category slug (e.g., "politics", "crypto").
-            min_volume: Minimum 24h volume filter.
-            min_liquidity: Minimum liquidity filter.
-
-        Returns:
-            List of PolymarketMarket objects.
-        """
-        params: dict[str, str] = {
-            "limit": str(limit),
-            "offset": str(offset),
-            "active": "true",
-            "closed": "false",
-        }
-        url = f"{self._gamma_base}/markets?{urllib.parse.urlencode(params)}"
-        raw_markets = _http_get(url, timeout=self._timeout, rate_limiter=self._limiter)
-
-        if not isinstance(raw_markets, list):
-            logger.warning("Unexpected Gamma /markets response type: %s", type(raw_markets))
-            return []
-
-        results: list[PolymarketMarket] = []
-        for raw in raw_markets:
+        params: dict[str, Any] | None = None,
+        payload: Any | None = None,
+    ) -> Any:
+        last_error: Exception | None = None
+        for attempt in range(self.max_retries):
             try:
-                market = self._parse_gamma_market(raw)
-            except (KeyError, ValueError, TypeError) as exc:
-                logger.debug("Skipping malformed market %s: %s", raw.get("conditionId", "?"), exc)
-                continue
-
-            # Apply client-side filters
-            if category and market.category.lower() != category.lower():
-                continue
-            if market.volume_24h < min_volume:
-                continue
-            if market.liquidity < min_liquidity:
-                continue
-
-            results.append(market)
-
-        return results
-
-    def get_market(self, condition_id: str) -> PolymarketMarket | None:
-        """Fetch a single market by condition ID.
-
-        Uses the CLOB API (which supports condition_id lookup) as primary,
-        then enriches with Gamma metadata when available.
-        """
-        # CLOB API reliably resolves condition_id
-        clob_url = f"{self._clob_base}/markets/{condition_id}"
-        try:
-            clob_data = _http_get(clob_url, timeout=self._timeout, rate_limiter=self._limiter)
-        except (ConnectionError, urllib.error.HTTPError):
-            return None
-
-        if not isinstance(clob_data, dict):
-            return None
-
-        # Extract tokens from CLOB response
-        tokens = clob_data.get("tokens", [])
-        token_id_yes = ""
-        token_id_no = ""
-        market_prob = 0.5
-        for tok in tokens:
-            outcome = tok.get("outcome", "")
-            tid = tok.get("token_id", "")
-            price = float(tok.get("price", 0))
-            if outcome == "Yes":
-                token_id_yes = tid
-                if price > 0:
-                    market_prob = price
-            elif outcome == "No":
-                token_id_no = tid
-
-        # Try Gamma for richer metadata (volume, liquidity, dates)
-        gamma_data: dict[str, Any] = {}
-        try:
-            gamma_url = f"{self._gamma_base}/markets?limit=100&active=true&closed=false"
-            gamma_results = _http_get(gamma_url, timeout=self._timeout, rate_limiter=self._limiter)
-            if isinstance(gamma_results, list):
-                for item in gamma_results:
-                    if item.get("conditionId") == condition_id:
-                        gamma_data = item
-                        break
-        except (ConnectionError, urllib.error.HTTPError):
-            pass
-
-        question = str(clob_data.get("question", gamma_data.get("question", "")))
-        volume_24h = float(gamma_data.get("volume24hr", gamma_data.get("volume", 0)))
-        liquidity = float(gamma_data.get("liquidity", 0))
-        end_date = str(clob_data.get("end_date_iso", gamma_data.get("endDate", "")))
-        active = bool(clob_data.get("active", True))
-        closed = bool(clob_data.get("closed", False))
-        category = str(gamma_data.get("groupItemTitle", gamma_data.get("category", "other"))).lower()
-
-        market_prob = max(0.001, min(0.999, market_prob))
-        best_bid = float(gamma_data.get("bestBid", market_prob - 0.01))
-        best_ask = float(gamma_data.get("bestAsk", market_prob + 0.01))
-
-        return PolymarketMarket(
-            condition_id=condition_id,
-            question=question,
-            token_id_yes=token_id_yes,
-            token_id_no=token_id_no,
-            market_prob=market_prob,
-            volume_24h=volume_24h,
-            liquidity=liquidity,
-            end_date=end_date,
-            active=active,
-            closed=closed,
-            category=category,
-            best_bid=best_bid,
-            best_ask=best_ask,
-            spread=max(best_ask - best_bid, 0.0),
-            order_book_bids=[(best_bid, liquidity / 2)] if liquidity > 0 else [],
-            order_book_asks=[(best_ask, liquidity / 2)] if liquidity > 0 else [],
-            metadata={
-                "conditionId": condition_id,
-                "slug": gamma_data.get("slug", ""),
-                "neg_risk": clob_data.get("neg_risk", gamma_data.get("negRisk", False)),
-                "tick_size": str(clob_data.get("minimum_tick_size", "0.01")),
-            },
-        )
-
-    def get_events(
-        self,
-        *,
-        limit: int = 25,
-        offset: int = 0,
-        active: bool = True,
-    ) -> list[PolymarketEvent]:
-        """Fetch events (which group related markets)."""
-        params: dict[str, str] = {
-            "limit": str(limit),
-            "offset": str(offset),
-            "active": str(active).lower(),
-            "closed": "false",
-        }
-        url = f"{self._gamma_base}/events?{urllib.parse.urlencode(params)}"
-        raw_events = _http_get(url, timeout=self._timeout, rate_limiter=self._limiter)
-
-        if not isinstance(raw_events, list):
-            return []
-
-        results: list[PolymarketEvent] = []
-        for raw in raw_events:
-            try:
-                event = self._parse_gamma_event(raw)
-                results.append(event)
-            except (KeyError, ValueError, TypeError) as exc:
-                logger.debug("Skipping malformed event: %s", exc)
-                continue
-
-        return results
-
-    # ------------------------------------------------------------------
-    # CLOB API — order book (public endpoint, no auth)
-    # ------------------------------------------------------------------
-
-    def get_order_book(self, token_id: str) -> dict[str, list[tuple[float, float]]]:
-        """Fetch the live order book for a token from the CLOB.
-
-        Args:
-            token_id: The YES or NO token ID.
-
-        Returns:
-            Dict with "bids" and "asks", each a list of (price, size) tuples
-            sorted best-first.
-        """
-        url = f"{self._clob_base}/book?token_id={token_id}"
-        raw = _http_get(url, timeout=self._timeout, rate_limiter=self._limiter)
-
-        bids: list[tuple[float, float]] = []
-        asks: list[tuple[float, float]] = []
-
-        for entry in raw.get("bids", []):
-            price = float(entry.get("price", 0))
-            size = float(entry.get("size", 0))
-            if price > 0 and size > 0:
-                bids.append((price, size))
-
-        for entry in raw.get("asks", []):
-            price = float(entry.get("price", 0))
-            size = float(entry.get("size", 0))
-            if price > 0 and size > 0:
-                asks.append((price, size))
-
-        # Best-first: bids descending, asks ascending
-        bids.sort(key=lambda x: x[0], reverse=True)
-        asks.sort(key=lambda x: x[0])
-
-        return {"bids": bids, "asks": asks}
-
-    def get_midpoint(self, token_id: str) -> float | None:
-        """Fetch the CLOB midpoint price for a token."""
-        url = f"{self._clob_base}/midpoint?token_id={token_id}"
-        try:
-            raw = _http_get(url, timeout=self._timeout, rate_limiter=self._limiter)
-            mid = float(raw.get("mid", 0))
-            return mid if mid > 0 else None
-        except (ConnectionError, ValueError):
-            return None
-
-    def get_price(self, token_id: str, side: str = "buy") -> float | None:
-        """Fetch the best available price for a token on a given side."""
-        url = f"{self._clob_base}/price?token_id={token_id}&side={side}"
-        try:
-            raw = _http_get(url, timeout=self._timeout, rate_limiter=self._limiter)
-            price = float(raw.get("price", 0))
-            return price if price > 0 else None
-        except (ConnectionError, ValueError):
-            return None
-
-    # ------------------------------------------------------------------
-    # CLOB API — authenticated trading
-    # ------------------------------------------------------------------
-
-    def get_balance(self) -> float:
-        """Get USDC balance (requires CLOB credentials)."""
-        client = self._ensure_clob_client()
-        resp = client.get_balance_allowance()
-        # py-clob-client returns balance in wei (USDC has 6 decimals)
-        balance_raw = float(resp.get("balance", 0))
-        return balance_raw / 1e6
-
-    def get_position(self, condition_id: str) -> dict[str, float]:
-        """Get current position sizes for a market.
-
-        Returns:
-            Dict with "yes" and "no" position sizes.
-        """
-        client = self._ensure_clob_client()
-        positions = client.get_positions()
-        result = {"yes": 0.0, "no": 0.0}
-        for pos in positions:
-            if pos.get("conditionId") == condition_id or pos.get("asset", {}).get("conditionId") == condition_id:
-                token_id = pos.get("tokenId", "") or pos.get("asset", {}).get("tokenId", "")
-                size = float(pos.get("size", 0))
-                # Determine if YES or NO based on outcomeIndex
-                outcome_idx = pos.get("outcomeIndex", pos.get("asset", {}).get("outcomeIndex"))
-                if outcome_idx == 0 or str(outcome_idx) == "0":
-                    result["yes"] = size
-                else:
-                    result["no"] = size
-        return result
-
-    def place_order(
-        self,
-        *,
-        token_id: str,
-        side: str,
-        size: float,
-        price: float,
-        tick_size: str = "0.01",
-        neg_risk: bool = False,
-    ) -> dict[str, Any]:
-        """Place a limit order on the CLOB.
-
-        Args:
-            token_id: YES or NO token ID.
-            side: "BUY" or "SELL".
-            size: Number of contracts.
-            price: Limit price (0-1, must align to tick_size).
-            tick_size: Minimum price increment ("0.01" or "0.001").
-            neg_risk: Whether this is a neg-risk market.
-
-        Returns:
-            Order response dict from the CLOB.
-
-        Raises:
-            RuntimeError: If credentials are missing.
-            ImportError: If py-clob-client is not installed.
-        """
-        client = self._ensure_clob_client()
-
-        from py_clob_client.order_builder.constants import BUY, SELL
-
-        order_side = BUY if side.upper() == "BUY" else SELL
-
-        order_args = {
-            "token_id": token_id,
-            "price": price,
-            "size": size,
-            "side": order_side,
-        }
-
-        if neg_risk:
-            order_args["neg_risk"] = True
-
-        signed_order = client.create_order(order_args)
-        resp = client.post_order(signed_order, tick_size=tick_size)
-
-        logger.info(
-            "Order placed: token=%s side=%s size=%.2f price=%.4f resp=%s",
-            token_id, side, size, price, resp,
-        )
-        return resp
-
-    def cancel_order(self, order_id: str) -> bool:
-        """Cancel an outstanding order."""
-        client = self._ensure_clob_client()
-        try:
-            client.cancel(order_id)
-            return True
-        except Exception as exc:
-            logger.warning("Cancel failed for %s: %s", order_id, exc)
-            return False
-
-    def cancel_all(self) -> bool:
-        """Cancel all outstanding orders."""
-        client = self._ensure_clob_client()
-        try:
-            client.cancel_all()
-            return True
-        except Exception as exc:
-            logger.warning("Cancel all failed: %s", exc)
-            return False
-
-    # ------------------------------------------------------------------
-    # Bridge: Polymarket -> agent.MarketState (for backtest compatibility)
-    # ------------------------------------------------------------------
-
-    def to_agent_market_state(
-        self,
-        market: PolymarketMarket,
-        *,
-        fair_prob: float | None = None,
-    ) -> "AgentMarketState":
-        """Convert a PolymarketMarket to the agent's MarketState type.
-
-        The agent requires a `fair_prob` (the trader's forecast). This must
-        be supplied externally — the adapter does not generate forecasts.
-
-        Args:
-            market: PolymarketMarket from get_active_markets() or get_market().
-            fair_prob: Your probability estimate. If None, uses market_prob
-                       (which means zero edge — no trade will be proposed).
-
-        Returns:
-            An agent.MarketState suitable for AutoPredictAgent.evaluate_market().
-        """
-        from autopredict.agent import MarketState as AgentMarketState
-        from autopredict.market_env import BookLevel, OrderBook
-
-        bids = [BookLevel(price=p, size=s) for p, s in market.order_book_bids]
-        asks = [BookLevel(price=p, size=s) for p, s in market.order_book_asks]
-        order_book = OrderBook(
-            market_id=market.condition_id,
-            bids=bids,
-            asks=asks,
-        )
-
-        # Parse end_date to hours until expiry
-        try:
-            expiry_dt = datetime.fromisoformat(market.end_date.replace("Z", "+00:00"))
-            delta = expiry_dt - datetime.now(timezone.utc)
-            time_to_expiry_hours = max(delta.total_seconds() / 3600.0, 0.0)
-        except (ValueError, AttributeError):
-            time_to_expiry_hours = 24.0  # fallback
-
-        return AgentMarketState(
-            market_id=market.condition_id,
-            market_prob=market.market_prob,
-            fair_prob=fair_prob if fair_prob is not None else market.market_prob,
-            time_to_expiry_hours=time_to_expiry_hours,
-            order_book=order_book,
-            metadata={
-                "category": market.category,
-                "question": market.question,
-                "volume_24h": market.volume_24h,
-                "liquidity": market.liquidity,
-                "token_id_yes": market.token_id_yes,
-                "token_id_no": market.token_id_no,
-            },
-        )
-
-    def fetch_markets_for_agent(
-        self,
-        *,
-        limit: int = 50,
-        min_liquidity: float = 1000.0,
-        fair_prob_fn: Any | None = None,
-    ) -> list:
-        """Convenience: fetch markets and convert to agent MarketState format.
-
-        Args:
-            limit: Max markets to fetch.
-            min_liquidity: Minimum liquidity filter.
-            fair_prob_fn: Optional callable(PolymarketMarket) -> float that
-                          returns your probability estimate. If None, fair_prob
-                          defaults to market_prob (no edge).
-
-        Returns:
-            List of agent.MarketState objects.
-        """
-        markets = self.get_active_markets(limit=limit, min_liquidity=min_liquidity)
-        results = []
-        for market in markets:
-            # Enrich with real order book from CLOB if we have a token ID
-            if market.token_id_yes:
-                try:
-                    book = self.get_order_book(market.token_id_yes)
-                    market = PolymarketMarket(
-                        condition_id=market.condition_id,
-                        question=market.question,
-                        token_id_yes=market.token_id_yes,
-                        token_id_no=market.token_id_no,
-                        market_prob=market.market_prob,
-                        volume_24h=market.volume_24h,
-                        liquidity=market.liquidity,
-                        end_date=market.end_date,
-                        active=market.active,
-                        closed=market.closed,
-                        category=market.category,
-                        best_bid=book["bids"][0][0] if book["bids"] else market.best_bid,
-                        best_ask=book["asks"][0][0] if book["asks"] else market.best_ask,
-                        spread=(book["asks"][0][0] - book["bids"][0][0])
-                            if book["bids"] and book["asks"]
-                            else market.spread,
-                        order_book_bids=book["bids"],
-                        order_book_asks=book["asks"],
-                        metadata=market.metadata,
+                response = self.session.request(
+                    method=method,
+                    url=url,
+                    params=params,
+                    json=payload,
+                    timeout=self.timeout_seconds,
+                )
+                if response.status_code in {429, 500, 502, 503, 504}:
+                    raise requests.HTTPError(
+                        f"Polymarket request to {url} failed with status {response.status_code}",
+                        response=response,
                     )
-                except (ConnectionError, KeyError) as exc:
-                    logger.debug("Could not fetch CLOB book for %s: %s", market.condition_id, exc)
-
-            fair_prob = None
-            if fair_prob_fn is not None:
+                response.raise_for_status()
                 try:
-                    fair_prob = float(fair_prob_fn(market))
-                except Exception as exc:
-                    logger.debug("fair_prob_fn failed for %s: %s", market.condition_id, exc)
+                    return response.json()
+                except ValueError:
+                    return response.text
+            except (requests.RequestException, ValueError) as exc:
+                last_error = exc
+                if attempt == self.max_retries - 1:
+                    break
+                time.sleep(0.5 * (2**attempt))
+        raise RuntimeError(f"Polymarket request failed for {url}: {last_error}") from last_error
 
-            results.append(self.to_agent_market_state(market, fair_prob=fair_prob))
-
-        return results
-
-    # ------------------------------------------------------------------
-    # Internal parsing
-    # ------------------------------------------------------------------
-
-    def _parse_gamma_market(self, raw: dict[str, Any]) -> PolymarketMarket:
-        """Parse a Gamma API market response into PolymarketMarket."""
-        condition_id = str(raw["conditionId"])
-        question = str(raw.get("question", ""))
-
-        # Token IDs (YES = index 0, NO = index 1 in clobTokenIds)
-        # Gamma API returns these as JSON strings, not arrays
-        clob_token_ids = raw.get("clobTokenIds", [])
-        if isinstance(clob_token_ids, str):
-            try:
-                clob_token_ids = json.loads(clob_token_ids)
-            except (json.JSONDecodeError, TypeError):
-                clob_token_ids = []
-        token_id_yes = str(clob_token_ids[0]) if len(clob_token_ids) > 0 else ""
-        token_id_no = str(clob_token_ids[1]) if len(clob_token_ids) > 1 else ""
-
-        # Probability from outcomePrices (YES price = market probability)
-        outcome_prices = raw.get("outcomePrices", [])
-        if isinstance(outcome_prices, str):
-            try:
-                outcome_prices = json.loads(outcome_prices)
-            except (json.JSONDecodeError, TypeError):
-                outcome_prices = []
-        if outcome_prices and len(outcome_prices) > 0:
-            market_prob = float(outcome_prices[0])
-        else:
-            market_prob = float(raw.get("lastTradePrice", 0.5))
-
-        # Best bid/ask from Gamma (approximation — CLOB has the real book)
-        best_bid = float(raw.get("bestBid", market_prob - 0.01))
-        best_ask = float(raw.get("bestAsk", market_prob + 0.01))
-        spread = max(best_ask - best_bid, 0.0)
-
-        # Clamp to valid range
-        market_prob = max(0.001, min(0.999, market_prob))
-        best_bid = max(0.001, min(0.999, best_bid))
-        best_ask = max(0.001, min(0.999, best_ask))
-
-        volume_24h = float(raw.get("volume24hr", raw.get("volume", 0)))
-        liquidity = float(raw.get("liquidity", 0))
-        end_date = str(raw.get("endDate", raw.get("endDateIso", "")))
-        active = bool(raw.get("active", True))
-        closed = bool(raw.get("closed", False))
-
-        # Category
-        category = str(raw.get("groupItemTitle", raw.get("category", "other"))).lower()
-
-        # Gamma doesn't return full order book — use placeholder bids/asks
-        # from best bid/ask. Real book is fetched via get_order_book().
-        order_book_bids = [(best_bid, liquidity / 2)] if liquidity > 0 else []
-        order_book_asks = [(best_ask, liquidity / 2)] if liquidity > 0 else []
-
-        return PolymarketMarket(
-            condition_id=condition_id,
-            question=question,
-            token_id_yes=token_id_yes,
-            token_id_no=token_id_no,
-            market_prob=market_prob,
-            volume_24h=volume_24h,
-            liquidity=liquidity,
-            end_date=end_date,
-            active=active,
-            closed=closed,
-            category=category,
-            best_bid=best_bid,
-            best_ask=best_ask,
-            spread=spread,
-            order_book_bids=order_book_bids,
-            order_book_asks=order_book_asks,
-            metadata={
-                "conditionId": condition_id,
-                "slug": raw.get("slug", ""),
-                "neg_risk": raw.get("negRisk", False),
-                "tick_size": raw.get("minimumTickSize", "0.01"),
-            },
+    @staticmethod
+    def _resolve_yes_no_tokens(raw_market: dict[str, Any]) -> tuple[str | None, str | None]:
+        token_ids = PolymarketAdapter._parse_json_list(raw_market.get("clobTokenIds"))
+        outcomes = [
+            str(outcome).strip().lower()
+            for outcome in PolymarketAdapter._parse_json_list(raw_market.get("outcomes"))
+        ]
+        yes_token = (
+            token_ids[outcomes.index("yes")]
+            if "yes" in outcomes and outcomes.index("yes") < len(token_ids)
+            else None
         )
-
-    def _parse_gamma_event(self, raw: dict[str, Any]) -> PolymarketEvent:
-        """Parse a Gamma API event response."""
-        event_id = str(raw.get("id", ""))
-        title = str(raw.get("title", ""))
-        slug = str(raw.get("slug", ""))
-
-        markets: list[PolymarketMarket] = []
-        for m in raw.get("markets", []):
-            try:
-                markets.append(self._parse_gamma_market(m))
-            except (KeyError, ValueError, TypeError):
-                continue
-
-        return PolymarketEvent(
-            event_id=event_id,
-            title=title,
-            slug=slug,
-            markets=markets,
+        no_token = (
+            token_ids[outcomes.index("no")]
+            if "no" in outcomes and outcomes.index("no") < len(token_ids)
+            else None
         )
+        return yes_token, no_token
+
+    @staticmethod
+    def _extract_yes_probability(raw_market: dict[str, Any]) -> float | None:
+        outcomes = [
+            str(outcome).strip().lower()
+            for outcome in PolymarketAdapter._parse_json_list(raw_market.get("outcomes"))
+        ]
+        if "yes" not in outcomes:
+            return None
+        yes_index = outcomes.index("yes")
+        prices = PolymarketAdapter._parse_json_list(raw_market.get("outcomePrices"))
+        if yes_index >= len(prices):
+            return None
+        price = PolymarketAdapter._coerce_optional_float(prices[yes_index])
+        return PolymarketAdapter._clamp_probability(price) if price is not None else None
+
+    @staticmethod
+    def _parse_json_list(value: Any) -> list[Any]:
+        if value is None:
+            return []
+        if isinstance(value, list):
+            return list(value)
+        if isinstance(value, str):
+            try:
+                parsed = json.loads(value)
+            except json.JSONDecodeError:
+                return [value]
+            if isinstance(parsed, list):
+                return parsed
+            return [parsed]
+        return [value]
+
+    @staticmethod
+    def _coerce_float(value: Any, default: float = 0.0) -> float:
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return default
+
+    @staticmethod
+    def _coerce_optional_float(value: Any) -> float | None:
+        try:
+            return float(value)
+        except (TypeError, ValueError):
+            return None
+
+    @staticmethod
+    def _best_price(levels: list[dict[str, Any]] | tuple[Any, ...] | list[Any]) -> float | None:
+        if not levels:
+            return None
+        level = levels[0]
+        if isinstance(level, dict):
+            return PolymarketAdapter._coerce_optional_float(level.get("price"))
+        if isinstance(level, (list, tuple)) and level:
+            return PolymarketAdapter._coerce_optional_float(level[0])
+        return None
+
+    @staticmethod
+    def _total_size(levels: list[dict[str, Any]] | tuple[Any, ...] | list[Any]) -> float:
+        total = 0.0
+        for level in levels:
+            if isinstance(level, dict):
+                total += PolymarketAdapter._coerce_float(level.get("size"), default=0.0)
+            elif isinstance(level, (list, tuple)) and len(level) >= 2:
+                total += PolymarketAdapter._coerce_float(level[1], default=0.0)
+        return total
+
+    @staticmethod
+    def _parse_timestamp(value: Any) -> datetime | None:
+        if isinstance(value, str) and value:
+            return datetime.fromisoformat(value.replace("Z", "+00:00"))
+        return None
+
+    @staticmethod
+    def _round_to_tick(price: float, tick_size: float) -> float:
+        if tick_size <= 0:
+            return price
+        rounded = round(price / tick_size) * tick_size
+        return min(max(rounded, tick_size), 1.0 - tick_size)
+
+    @staticmethod
+    def _clamp_probability(value: float) -> float:
+        return min(max(value, 0.0), 1.0)
+
+    @staticmethod
+    def _format_tick_size(value: float) -> str:
+        return f"{value:.4f}".rstrip("0").rstrip(".")
+
+    def _extract_tick_size(self, raw_market: dict[str, Any], book: dict[str, Any]) -> float:
+        for key in ("tick_size", "min_tick_size", "orderPriceMinTickSize"):
+            if key in book:
+                return max(self._coerce_float(book[key], default=0.001), 0.0001)
+            if key in raw_market:
+                return max(self._coerce_float(raw_market[key], default=0.001), 0.0001)
+        return 0.001
+
+    def _extract_min_order_size(self, raw_market: dict[str, Any], book: dict[str, Any]) -> float:
+        for key in ("min_order_size", "orderMinSize", "minOrderSize"):
+            if key in book:
+                return max(self._coerce_float(book[key], default=1.0), 1.0)
+            if key in raw_market:
+                return max(self._coerce_float(raw_market[key], default=1.0), 1.0)
+        return 1.0
+
+    @staticmethod
+    def _infer_category(raw_market: dict[str, Any]) -> MarketCategory:
+        raw_category = str(raw_market.get("category") or "").strip().lower()
+        if raw_category:
+            category_map = {
+                "politics": MarketCategory.POLITICS,
+                "crypto": MarketCategory.CRYPTO,
+                "economics": MarketCategory.ECONOMICS,
+                "macro": MarketCategory.ECONOMICS,
+                "sports": MarketCategory.SPORTS,
+                "science": MarketCategory.SCIENCE,
+                "entertainment": MarketCategory.ENTERTAINMENT,
+                "geopolitics": MarketCategory.POLITICS,
+            }
+            return category_map.get(raw_category, MarketCategory.OTHER)
+
+        haystack = " ".join(
+            str(value or "")
+            for value in (
+                raw_market.get("question"),
+                raw_market.get("slug"),
+                raw_market.get("description"),
+            )
+        ).lower()
+        for category, keywords in _CATEGORY_KEYWORDS:
+            if any(keyword in haystack for keyword in keywords):
+                return category
+        return MarketCategory.OTHER

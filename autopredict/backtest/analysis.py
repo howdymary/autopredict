@@ -24,7 +24,7 @@ from .metrics import (
     PredictionMarketMetrics,
     TimeDecayAnalysis,
 )
-from market_env import ForecastRecord, TradeRecord
+from autopredict.market_env import ForecastRecord, TradeRecord
 
 EPSILON = 1e-9
 

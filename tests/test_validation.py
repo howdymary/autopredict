@@ -277,17 +277,17 @@ class TestMarketDataValidator:
 
         assert any("low liquidity" in e.message.lower() for e in errors)
 
-    def test_validate_dataset(self, sample_markets):
+    def test_validate_dataset(self, resolved_markets_fixture):
         """Test dataset validation."""
         validator = MarketDataValidator()
         is_valid, summary = validator.validate_dataset(
-            sample_markets, verbose=False
+            resolved_markets_fixture, verbose=False
         )
 
         assert "is_valid" in summary
         assert "total_markets" in summary
         assert "valid_markets" in summary
-        assert summary["total_markets"] == len(sample_markets)
+        assert summary["total_markets"] == len(resolved_markets_fixture)
 
     def test_validate_empty_dataset(self):
         """Test validation of empty dataset."""

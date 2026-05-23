@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any
 
@@ -25,36 +24,42 @@ def datasets_path(base_path: Path) -> Path:
 
 
 @pytest.fixture
-def sample_markets() -> list[dict[str, Any]]:
-    """Minimal market fixtures for testing validation logic."""
+def resolved_markets_fixture(datasets_path: Path) -> list[dict[str, Any]]:
+    """Return a small deterministic test fixture, not product data."""
+    del datasets_path
     return [
         {
-            "market_id": "test-politics-001",
-            "category": "politics",
-            "market_prob": 0.44,
-            "fair_prob": 0.52,
+            "market_id": "fixture-market-1",
+            "market_prob": 0.50,
+            "fair_prob": 0.58,
             "outcome": 1,
-            "time_to_expiry_hours": 240.0,
-            "next_mid_price": 0.49,
+            "time_to_expiry_hours": 24.0,
+            "next_mid_price": 0.54,
             "order_book": {
-                "bids": [[0.43, 180.0], [0.42, 220.0]],
-                "asks": [[0.45, 160.0], [0.46, 210.0]],
+                "bids": [[0.49, 100.0]],
+                "asks": [[0.51, 100.0]],
             },
         },
         {
-            "market_id": "test-macro-001",
-            "category": "macro",
-            "market_prob": 0.61,
-            "fair_prob": 0.54,
+            "market_id": "fixture-market-2",
+            "market_prob": 0.62,
+            "fair_prob": 0.55,
             "outcome": 0,
-            "time_to_expiry_hours": 96.0,
+            "time_to_expiry_hours": 48.0,
             "next_mid_price": 0.57,
             "order_book": {
-                "bids": [[0.60, 150.0], [0.59, 200.0]],
-                "asks": [[0.62, 140.0], [0.63, 190.0]],
+                "bids": [[0.61, 100.0]],
+                "asks": [[0.63, 100.0]],
             },
         },
     ]
+
+
+@pytest.fixture
+def sample_markets(resolved_markets_fixture: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Compatibility fixture for tests that expect named sample records."""
+
+    return [dict(record) for record in resolved_markets_fixture]
 
 
 @pytest.fixture

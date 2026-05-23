@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=45", "wheel"]
+requires = ["setuptools>=77", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -8,7 +8,7 @@ version = "0.1.0"
 description = "A minimal framework for self-improving prediction market agents"
 readme = "README.md"
 requires-python = ">=3.9"
-license = {text = "MIT"}
+license = "MIT"
 authors = [
     {name = "AutoPredict Contributors"},
 ]
@@ -17,7 +17,6 @@ classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
-    "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
     "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
@@ -27,17 +26,21 @@ classifiers = [
     "Topic :: Office/Business :: Financial",
 ]
 
-# No external dependencies - stdlib only
-dependencies = []
+# Small runtime dependency set
+dependencies = [
+    "PyYAML>=6.0",
+    "requests>=2.31",
+]
 
 [project.optional-dependencies]
 dev = [
     "pytest>=7.0",
+    "pytest-cov>=4.0",
     "black>=22.0",
     "mypy>=0.990",
 ]
 polymarket = [
-    "py-clob-client>=0.4.0",
+    "py-clob-client>=0.34.6",
 ]
 
 [project.urls]
@@ -47,19 +50,20 @@ Repository = "https://github.com/howdymary/autopredict"
 
 [project.scripts]
 autopredict = "autopredict.cli:main"
+autopredict-live = "scripts.run_live:main"
+autopredict-paper = "scripts.run_paper:main"
 
 [tool.setuptools]
 py-modules = ["agent", "market_env", "run_experiment", "run_experiment_with_validation"]
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["autopredict*", "validation*"]
+include = ["autopredict*", "validation*", "scripts*"]
 
 [tool.setuptools.package-data]
 autopredict = [
     "_defaults/*.json",
     "_defaults/*.md",
-    "_defaults/datasets/*.json",
     "_defaults/strategy_configs/*.json",
 ]
 

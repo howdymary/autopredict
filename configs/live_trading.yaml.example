@@ -6,6 +6,9 @@
 # 2. Set your API keys as environment variables:
 #    export POLYMARKET_API_KEY="your-key-here"
 #    export POLYMARKET_API_SECRET="your-secret-here"
+#    export POLYMARKET_API_PASSPHRASE="your-passphrase-here"
+#    export POLYMARKET_PRIVATE_KEY="your-private-key-here"
+#    export POLYMARKET_FUNDER="0xyour-funder-address"
 # 3. Review and adjust all limits carefully
 # 4. Start with small limits until comfortable
 # 5. NEVER commit live_trading.yaml to git
@@ -40,6 +43,8 @@ venue:
   mode: live                        # LIVE MODE - REAL MONEY
   api_key: ${POLYMARKET_API_KEY}    # Load from environment variable
   api_secret: ${POLYMARKET_API_SECRET}  # Load from environment variable
+  # POLYMARKET_API_PASSPHRASE, POLYMARKET_PRIVATE_KEY, and POLYMARKET_FUNDER
+  # are read directly from the environment by the live adapter.
   base_url: null                    # Use default URL
   max_requests_per_minute: 30       # Conservative rate limiting
   timeout_seconds: 30.0

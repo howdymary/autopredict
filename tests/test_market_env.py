@@ -12,6 +12,7 @@ from autopredict.market_env import (
     TradeRecord,
     ExecutionMetrics,
     _brier_score,
+    calculate_composite_score,
     evaluate_all,
 )
 
@@ -342,3 +343,48 @@ class TestEvaluateAll:
         assert metrics["total_pnl"] == 25.0
         assert metrics["num_trades"] == 2.0
         assert metrics["fill_rate"] == 1.0
+
+    def test_sharpe_is_not_trade_count_scaled(self):
+        """Duplicating identical trade distributions should not inflate Sharpe."""
+        base_trades = [
+            TradeRecord("m1", "buy", "market", 10, 10, 0.50, 0.50, 0.50, 1, 2.0, 0, 0, 0, 1.0),
+            TradeRecord("m2", "buy", "market", 10, 10, 0.50, 0.50, 0.50, 1, 1.0, 0, 0, 0, 1.0),
+            TradeRecord("m3", "buy", "market", 10, 10, 0.50, 0.50, 0.50, 1, 0.0, 0, 0, 0, 1.0),
+            TradeRecord("m4", "buy", "market", 10, 10, 0.50, 0.50, 0.50, 1, -1.0, 0, 0, 0, 1.0),
+        ]
+        duplicated_trades = base_trades + [
+            TradeRecord("m5", "buy", "market", 10, 10, 0.50, 0.50, 0.50, 1, 2.0, 0, 0, 0, 1.0),
+            TradeRecord("m6", "buy", "market", 10, 10, 0.50, 0.50, 0.50, 1, 1.0, 0, 0, 0, 1.0),
+            TradeRecord("m7", "buy", "market", 10, 10, 0.50, 0.50, 0.50, 1, 0.0, 0, 0, 0, 1.0),
+            TradeRecord("m8", "buy", "market", 10, 10, 0.50, 0.50, 0.50, 1, -1.0, 0, 0, 0, 1.0),
+        ]
+
+        base_metrics = evaluate_all([], base_trades)
+        duplicated_metrics = evaluate_all([], duplicated_trades)
+
+        assert duplicated_metrics["sharpe"] == pytest.approx(base_metrics["sharpe"])
+
+    def test_calculate_composite_score_uses_baseline_relative_metrics(self):
+        """Composite score should reward higher quality relative to a baseline."""
+        baseline = {
+            "sharpe": 1.0,
+            "brier_score": 0.20,
+            "total_pnl": 100.0,
+            "fill_rate": 0.50,
+            "max_drawdown": 20.0,
+        }
+
+        same_score = calculate_composite_score(baseline, baseline)
+        improved_score = calculate_composite_score(
+            {
+                "sharpe": 1.2,
+                "brier_score": 0.18,
+                "total_pnl": 120.0,
+                "fill_rate": 0.55,
+                "max_drawdown": 15.0,
+            },
+            baseline,
+        )
+
+        assert same_score == pytest.approx(0.775)
+        assert improved_score > same_score

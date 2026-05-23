@@ -1,6 +1,6 @@
 # AutoPredict Quick Start
 
-This walkthrough gets you from clone to scanning real Polymarket data.
+This walkthrough gets you from clone to a production-safe first run. AutoPredict does not ship sample market datasets; bring real resolved data for backtests, or use the live scanner for read-only market inspection.
 
 ## 1. Install
 
@@ -10,65 +10,73 @@ cd autopredict
 python -m pip install -e .
 ```
 
-## 2. Scan live markets
+## 2. Inspect Live Markets
 
 ```bash
-python predict.py
+python -m autopredict.cli scan-live --limit 20 --top 5
 ```
 
-This fetches active markets from Polymarket's Gamma API, pulls real order books from the CLOB, and shows you price, spread, depth, and volume for each market.
+For event sibling price sums:
 
 ```bash
-python predict.py --top 5 --verbose    # show fewer markets with detail
-python predict.py --category politics   # filter by category
-python predict.py --min-liquidity 5000  # only liquid markets
+python -m autopredict.cli scan-live --events --limit 20 --top 5
 ```
 
-## 3. Find structural edges in multi-outcome events
+This is read-only. It reports observed public Polymarket data and never creates forecasts, recommendations, or orders.
+
+Run the local safety audit before wiring live execution:
 
 ```bash
-python predict.py --events
+python -m autopredict.cli safety-audit --config /path/to/your/live_trading.yaml
 ```
 
-Shows events where sibling market prices should sum to ~1.0. If they don't, the gap is a real structural edge.
+## 3. Run A Backtest
 
-## 4. Test your own prediction
-
-If you think a market is mispriced, supply your probability estimate:
+Prepare a resolved-market JSON file from real historical data, then run:
 
 ```bash
-python predict.py --fair 0.60 <condition_id>
+python -m autopredict.cli backtest --dataset /path/to/resolved_markets.json
 ```
 
-This fetches the real market + order book, computes the edge, and runs the AutoPredict agent to give you a trade recommendation (side, size, order type, limit price).
+The command prints metrics and writes the latest run under `state/backtests/`.
 
-## 5. Iterate on the agent config
+## 4. Inspect The Latest Run
 
-Open `strategy_configs/baseline.json` and change one parameter:
-
-```json
-{
-  "min_edge": 0.08,
-  "aggressive_edge": 0.16,
-  "max_risk_fraction": 0.015
-}
+```bash
+python -m autopredict.cli score-latest
 ```
 
-Then re-run `predict.py --fair` to see how the agent's recommendation changes.
+Useful first-pass fields:
 
-That is the core loop:
+- `brier_score`: calibration quality for the forecast source being scored
+- `total_pnl`: simulated realized PnL
+- `fill_rate`: how much requested size filled
+- `avg_slippage_bps`: execution cost
+- `agent_feedback`: the framework's diagnosis of the current bottleneck
 
-1. find a market you have an opinion on
-2. supply your fair_prob
-3. see what the agent recommends
-4. adjust config if the recommendation doesn't match your conviction
-5. repeat
+## 5. Improve Offline
 
-## 6. Pick the next guide
+Run the forecast-owned ratchet on the same explicit dataset:
 
-- Forecast quality: [docs/fair_prob_guidelines.md](docs/fair_prob_guidelines.md)
-- Execution tuning: [docs/BACKTESTING.md](docs/BACKTESTING.md)
-- Metrics explained: [docs/METRICS.md](docs/METRICS.md)
-- Strategy ideas: [docs/STRATEGIES.md](docs/STRATEGIES.md)
-- System overview: [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
-- Something broke: [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)
+```bash
+python -m autopredict.cli learn improve \
+  --dataset /path/to/resolved_markets.json \
+  --archive-dir state/meta_harness/archives \
+  --frontier-path state/meta_harness/frontier.json
+```
+
+The archive records provenance and dataset identity. The frontier only promotes a run when it improves the selected score for the same dataset hash, split mode, and strategy kind.
+
+## 6. Run Tests
+
+```bash
+python -m pip install -e ".[dev]"
+pytest -q
+```
+
+Next guides:
+
+- [docs/BACKTESTING.md](docs/BACKTESTING.md)
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+- [docs/LEARNING.md](docs/LEARNING.md)
+- [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)

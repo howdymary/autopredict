@@ -31,9 +31,39 @@ from .schema import (
 
 # Pattern for environment variable substitution: ${VAR_NAME} or ${VAR_NAME:default}
 ENV_VAR_PATTERN = re.compile(r'\$\{([^}:]+)(?::([^}]*))?\}')
+MISSING_ENV_PLACEHOLDER_PREFIX = "__AUTOPREDICT_MISSING_ENV__:"
 
 
-def substitute_env_vars(value: Any) -> Any:
+def missing_env_placeholder(var_name: str) -> str:
+    """Return the sentinel string used for unresolved dry-run env vars."""
+
+    return f"{MISSING_ENV_PLACEHOLDER_PREFIX}{var_name}"
+
+
+def is_missing_env_placeholder(value: Any) -> bool:
+    """Return whether a value is a dry-run placeholder for a missing env var."""
+
+    return isinstance(value, str) and value.startswith(MISSING_ENV_PLACEHOLDER_PREFIX)
+
+
+def collect_missing_env_vars(value: Any) -> list[str]:
+    """Collect unresolved env-var names from a nested config structure."""
+
+    missing: list[str] = []
+    if isinstance(value, dict):
+        for nested in value.values():
+            missing.extend(collect_missing_env_vars(nested))
+        return missing
+    if isinstance(value, list):
+        for nested in value:
+            missing.extend(collect_missing_env_vars(nested))
+        return missing
+    if is_missing_env_placeholder(value):
+        missing.append(str(value).split(":", 1)[1])
+    return missing
+
+
+def substitute_env_vars(value: Any, *, allow_missing: bool = False) -> Any:
     """Recursively substitute environment variables in configuration values.
 
     Supports ${VAR_NAME} and ${VAR_NAME:default_value} syntax.
@@ -63,6 +93,8 @@ def substitute_env_vars(value: Any) -> Any:
                 return env_value
             elif default is not None:
                 return default
+            elif allow_missing:
+                return missing_env_placeholder(var_name)
             else:
                 raise ValueError(
                     f"Environment variable '{var_name}' not found and no default provided. "
@@ -72,16 +104,16 @@ def substitute_env_vars(value: Any) -> Any:
         return ENV_VAR_PATTERN.sub(replace_var, value)
 
     elif isinstance(value, dict):
-        return {k: substitute_env_vars(v) for k, v in value.items()}
+        return {k: substitute_env_vars(v, allow_missing=allow_missing) for k, v in value.items()}
 
     elif isinstance(value, list):
-        return [substitute_env_vars(item) for item in value]
+        return [substitute_env_vars(item, allow_missing=allow_missing) for item in value]
 
     else:
         return value
 
 
-def load_yaml(path: str | Path) -> dict[str, Any]:
+def load_yaml(path: str | Path, *, allow_missing_env: bool = False) -> dict[str, Any]:
     """Load YAML file with environment variable substitution.
 
     Args:
@@ -106,7 +138,7 @@ def load_yaml(path: str | Path) -> dict[str, Any]:
         raise ValueError(f"Configuration file must contain a YAML mapping/dict, got {type(raw_config)}")
 
     # Substitute environment variables
-    config = substitute_env_vars(raw_config)
+    config = substitute_env_vars(raw_config, allow_missing=allow_missing_env)
 
     return config
 
@@ -183,7 +215,7 @@ def dict_to_logging_config(data: dict[str, Any]) -> LoggingConfig:
     )
 
 
-def load_config(path: str | Path) -> ExperimentConfig:
+def load_config(path: str | Path, *, allow_missing_env: bool = False) -> ExperimentConfig:
     """Load complete experiment configuration from YAML file.
 
     This is the main entry point for loading configurations. It handles:
@@ -208,7 +240,7 @@ def load_config(path: str | Path) -> ExperimentConfig:
         >>> config.validate()
         >>> print(f"Loaded {config.name} in {config.venue.mode} mode")
     """
-    data = load_yaml(path)
+    data = load_yaml(path, allow_missing_env=allow_missing_env)
 
     # Extract sub-configurations
     strategy_data = data.get("strategy", {})

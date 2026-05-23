@@ -7,14 +7,24 @@ from datetime import datetime, timezone
 import json
 from pathlib import Path
 
+from .evaluation import load_resolved_snapshots
 from .learning.analyzer import PerformanceAnalyzer
 from .learning.logger import TradeLogger
+from .live.safety_audit import run_safety_audit
 from .run_experiment import run_backtest
+from .self_improvement import (
+    improvement_config_with_population,
+    load_run_archive,
+    promote_archive,
+    run_forecast_owned_ratchet,
+    write_run_archive,
+)
 
 
 PACKAGE_ROOT = Path(__file__).resolve().parent
 REPO_ROOT = PACKAGE_ROOT.parent
 BUNDLED_DEFAULT_ROOT = PACKAGE_ROOT / "_defaults"
+SCAN_LIVE_DEFAULT_TIMEOUT_SECONDS = 30.0
 
 
 def _project_root() -> Path:
@@ -67,16 +77,17 @@ def _latest_metrics_file(state_dir: Path) -> Path | None:
 
 def command_backtest(args: argparse.Namespace) -> None:
     defaults = _load_defaults()
+    if not args.dataset:
+        raise SystemExit(
+            "backtest requires --dataset with real historical/resolved market data. "
+            "AutoPredict does not ship synthetic default market datasets."
+        )
     config_path = (
         _resolve_cli_path(args.config)
         if args.config
         else _resolve_default(defaults["default_strategy_config"])
     )
-    dataset_path = (
-        _resolve_cli_path(args.dataset)
-        if args.dataset
-        else _resolve_default(defaults["default_dataset"])
-    )
+    dataset_path = _resolve_cli_path(args.dataset)
     guidance_path = _resolve_default(defaults["strategy_guidance"])
     state_dir = _resolve_default(defaults["state_dir"], runtime_output=True)
     output_root = state_dir / datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
@@ -106,7 +117,55 @@ def command_trade_live(args: argparse.Namespace) -> None:
     defaults = _load_defaults()
     if not bool(defaults.get("live_trading_enabled", False)):
         raise SystemExit("trade-live is disabled by default in AutoPredict")
-    raise SystemExit("Live trading adapter is intentionally not implemented in this scaffold")
+    raise SystemExit(
+        "Live order execution requires a configured venue adapter and credentials. "
+        "Use scan-live for read-only public Polymarket scans."
+    )
+
+
+def command_scan_live(args: argparse.Namespace) -> None:
+    """Scan public Polymarket data without generating forecasts or orders."""
+
+    from . import live_scan
+
+    client = live_scan.PublicPolymarketClient(timeout_seconds=args.timeout)
+    scanner = live_scan.LivePolymarketScanner(client)
+    if args.events:
+        reports = scanner.scan_events(
+            limit=args.limit,
+            top=args.top,
+            min_markets=args.min_markets,
+            tolerance=args.tolerance,
+        )
+        rendered = (
+            live_scan.reports_to_json(reports)
+            if args.json
+            else live_scan.format_event_scan(reports, verbose=args.verbose)
+        )
+    else:
+        reports = scanner.scan_markets(
+            limit=args.limit,
+            top=args.top,
+            min_liquidity=args.min_liquidity,
+            min_volume=args.min_volume,
+            category=args.category,
+            include_books=not args.no_books,
+        )
+        rendered = (
+            live_scan.reports_to_json(reports)
+            if args.json
+            else live_scan.format_market_scan(reports, verbose=args.verbose)
+        )
+    print(rendered)
+
+
+def command_safety_audit(args: argparse.Namespace) -> None:
+    """Run local production-safety checks without touching venue APIs."""
+
+    result = run_safety_audit(_resolve_cli_path(args.config) if args.config else None)
+    print(json.dumps(result.to_dict(), indent=2, sort_keys=True))
+    if not result.passed:
+        raise SystemExit(1)
 
 
 def command_learn_analyze(args: argparse.Namespace) -> None:
@@ -168,30 +227,82 @@ def command_learn_tune(args: argparse.Namespace) -> None:
     """Describe the current parameter tuning entrypoint."""
 
     print("Parameter tuning requires full backtest integration.")
-    print("Use scripts/learn_and_improve.py for advanced tuning workflows.")
+    print("Use `autopredict learn improve --dataset <resolved-data.json>` for ratcheted runs.")
     print("\nExample:")
-    print("  python scripts/learn_and_improve.py tune \\")
-    print(f"    --config {args.config or 'strategy_configs/default.json'} \\")
-    print("    --output configs/strategy_tuned.json")
+    print("  autopredict learn improve --dataset resolved_markets.json --archive-dir state/archives")
 
 
 def command_learn_improve(args: argparse.Namespace) -> None:
-    """Describe the current improvement-loop entrypoint."""
+    """Run the package-native forecast-owned ratchet."""
 
-    print("Full improvement loop requires complete backtest integration.")
-    print("Use scripts/learn_and_improve.py for the complete workflow.")
-    print("\nExample:")
-    print("  python scripts/learn_and_improve.py improve \\")
-    print(f"    --config {args.config or 'strategy_configs/default.json'} \\")
-    print("    --log-dir state/trades \\")
-    print("    --auto-save")
+    if not args.dataset:
+        raise SystemExit(
+            "learn improve requires --dataset with real historical/resolved market data. "
+            "AutoPredict does not ship synthetic default market datasets."
+        )
+    dataset_path = _resolve_cli_path(args.dataset)
+    snapshots = load_resolved_snapshots(dataset_path)
+    config = improvement_config_with_population(
+        population_size=args.population_size,
+        train_size=args.train_size,
+        validation_size=args.validation_size,
+    )
+    summary = run_forecast_owned_ratchet(dataset_path, config=config)
+    payload = {
+        **summary.to_dict(),
+        "num_snapshots": len(snapshots),
+    }
+
+    archive_path = None
+    if args.archive_dir or args.frontier_path:
+        archive_dir = (
+            _resolve_cli_path(args.archive_dir)
+            if args.archive_dir
+            else _resolve_default("state/meta_harness/archives", runtime_output=True)
+        )
+        archive_path = write_run_archive(
+            summary,
+            archive_dir,
+            dataset_path=dataset_path,
+            config=config.walk_forward,
+            genome=summary.final_genome,
+            repo_root=REPO_ROOT,
+        )
+        payload["archive_path"] = str(archive_path)
+
+    if args.frontier_path:
+        if not summary.folds:
+            raise SystemExit("frontier promotion requires at least one validation fold")
+        final_metrics = summary.folds[-1]["winner_metrics"]
+        metric_name = "log_score"
+        score = float(final_metrics[metric_name])
+        if archive_path is None:
+            raise SystemExit("frontier promotion requires an archive path")
+        promotion = promote_archive(
+            _resolve_cli_path(args.frontier_path),
+            load_run_archive(archive_path),
+            score=score,
+            metric_name=metric_name,
+            archive_path=archive_path,
+        )
+        payload["frontier_promotion"] = {
+            "accepted": promotion.accepted,
+            "key": promotion.key,
+            "entry": promotion.entry,
+            "previous": promotion.previous,
+        }
+    if args.output:
+        output_path = _resolve_cli_path(args.output)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
+    print(json.dumps(payload, indent=2, sort_keys=True))
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="AutoPredict experiment CLI")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    backtest = subparsers.add_parser("backtest", help="Run a sample backtest over market snapshots")
+    backtest = subparsers.add_parser("backtest", help="Run a backtest over user-provided resolved market snapshots")
     backtest.add_argument("--config", help="Path to strategy config JSON")
     backtest.add_argument("--dataset", help="Path to dataset JSON")
     backtest.set_defaults(func=command_backtest)
@@ -199,8 +310,33 @@ def build_parser() -> argparse.ArgumentParser:
     score_latest = subparsers.add_parser("score-latest", help="Print the latest metrics JSON")
     score_latest.set_defaults(func=command_score_latest)
 
-    trade_live = subparsers.add_parser("trade-live", help="Placeholder live trading entrypoint")
-    trade_live.add_argument("--config", help="Unused placeholder for future adapter parity")
+    scan_live = subparsers.add_parser(
+        "scan-live",
+        help="Scan public Polymarket data without forecasts or orders",
+    )
+    scan_live.add_argument("--events", action="store_true", help="Scan event sibling price sums")
+    scan_live.add_argument("--category", help="Filter market scan by observed category")
+    scan_live.add_argument("--min-liquidity", type=float, default=0.0)
+    scan_live.add_argument("--min-volume", type=float, default=0.0)
+    scan_live.add_argument("--min-markets", type=int, default=2)
+    scan_live.add_argument("--tolerance", type=float, default=0.02)
+    scan_live.add_argument("--limit", type=int, default=100)
+    scan_live.add_argument("--top", type=int, default=15)
+    scan_live.add_argument("--timeout", type=float, default=SCAN_LIVE_DEFAULT_TIMEOUT_SECONDS)
+    scan_live.add_argument("--json", action="store_true", help="Emit JSON")
+    scan_live.add_argument("--verbose", "-v", action="store_true", help="Show IDs and sources")
+    scan_live.add_argument("--no-books", action="store_true", help="Skip CLOB order books")
+    scan_live.set_defaults(func=command_scan_live)
+
+    safety_audit = subparsers.add_parser(
+        "safety-audit",
+        help="Run no-network live deployment safety checks",
+    )
+    safety_audit.add_argument("--config", help="Optional live YAML config to audit")
+    safety_audit.set_defaults(func=command_safety_audit)
+
+    trade_live = subparsers.add_parser("trade-live", help="Disabled live order entrypoint")
+    trade_live.add_argument("--config", help="Reserved for future live execution config")
     trade_live.set_defaults(func=command_trade_live)
 
     learn = subparsers.add_parser("learn", help="Self-improvement and learning tools")
@@ -218,9 +354,13 @@ def build_parser() -> argparse.ArgumentParser:
     learn_tune.set_defaults(func=command_learn_tune)
 
     learn_improve = learn_subparsers.add_parser("improve", help="Run full improvement loop")
-    learn_improve.add_argument("--config", help="Current strategy config JSON file")
-    learn_improve.add_argument("--log-dir", help="Directory containing trade logs")
-    learn_improve.add_argument("--auto-save", action="store_true", help="Auto-save improved config")
+    learn_improve.add_argument("--dataset", help="Resolved-market dataset JSON file")
+    learn_improve.add_argument("--population-size", type=int, default=5, help="Population size per fold")
+    learn_improve.add_argument("--train-size", type=int, default=3, help="Train windows or groups per fold")
+    learn_improve.add_argument("--validation-size", type=int, default=1, help="Validation windows or groups per fold")
+    learn_improve.add_argument("--output", help="Optional JSON path for the ratchet summary")
+    learn_improve.add_argument("--archive-dir", help="Write an auditable meta-harness archive")
+    learn_improve.add_argument("--frontier-path", help="Promote the archive to this frontier JSON")
     learn_improve.set_defaults(func=command_learn_improve)
 
     return parser

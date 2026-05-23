@@ -37,8 +37,13 @@ def _latest_metrics_file(state_dir: Path) -> Path | None:
 
 def command_backtest(args: argparse.Namespace) -> None:
     defaults = _load_defaults()
+    if not args.dataset:
+        raise SystemExit(
+            "backtest requires --dataset with real historical/resolved market data. "
+            "AutoPredict does not ship synthetic default market datasets."
+        )
     config_path = _resolve(args.config or defaults["default_strategy_config"])
-    dataset_path = _resolve(args.dataset or defaults["default_dataset"])
+    dataset_path = _resolve(args.dataset)
     guidance_path = _resolve(defaults["strategy_guidance"])
     state_dir = _resolve(defaults["state_dir"])
     output_root = state_dir / datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
@@ -68,7 +73,10 @@ def command_trade_live(args: argparse.Namespace) -> None:
     defaults = _load_defaults()
     if not bool(defaults.get("live_trading_enabled", False)):
         raise SystemExit("trade-live is disabled by default in AutoPredict")
-    raise SystemExit("Live trading adapter is intentionally not implemented in this scaffold")
+    raise SystemExit(
+        "Live order execution requires a configured venue adapter and credentials. "
+        "Use `python -m autopredict.cli scan-live` for read-only public Polymarket scans."
+    )
 
 
 def command_learn_analyze(args: argparse.Namespace) -> None:
@@ -132,20 +140,25 @@ def command_learn_analyze(args: argparse.Namespace) -> None:
 
 def command_learn_tune(args: argparse.Namespace) -> None:
     """Tune strategy parameters via grid search."""
-    print("Parameter tuning requires a dataset of real market snapshots.")
-    print("Use the autopredict.learning.tuner.GridSearchTuner API to sweep configs.")
+    print("Parameter tuning requires full backtest integration.")
+    print("Use `python -m autopredict.cli learn improve --dataset <resolved-data.json>`.")
+    print(f"\nExample:")
+    print("  python -m autopredict.cli learn improve --dataset resolved_markets.json")
+
 
 def command_learn_improve(args: argparse.Namespace) -> None:
     """Run full improvement loop."""
-    print("Improvement loop requires a dataset of real market snapshots.")
-    print("Collect data via predict.py, then use GridSearchTuner to iterate.")
+    raise SystemExit(
+        "Use the packaged CLI for improvement runs: "
+        "python -m autopredict.cli learn improve --dataset <resolved-data.json>"
+    )
 
 
 def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="AutoPredict experiment CLI")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    backtest = subparsers.add_parser("backtest", help="Run a sample backtest over market snapshots")
+    backtest = subparsers.add_parser("backtest", help="Run a backtest over explicit resolved market snapshots")
     backtest.add_argument("--config", help="Path to strategy config JSON")
     backtest.add_argument("--dataset", help="Path to dataset JSON")
     backtest.set_defaults(func=command_backtest)
@@ -153,8 +166,8 @@ def build_parser() -> argparse.ArgumentParser:
     score_latest = subparsers.add_parser("score-latest", help="Print the latest metrics JSON")
     score_latest.set_defaults(func=command_score_latest)
 
-    trade_live = subparsers.add_parser("trade-live", help="Placeholder live trading entrypoint")
-    trade_live.add_argument("--config", help="Unused placeholder for future adapter parity")
+    trade_live = subparsers.add_parser("trade-live", help="Disabled live order entrypoint")
+    trade_live.add_argument("--config", help="Reserved for future live execution config")
     trade_live.set_defaults(func=command_trade_live)
 
     # Learning commands

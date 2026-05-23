@@ -15,7 +15,7 @@ Paper trading is completely safe - it simulates trading without risking real cap
 
 ```bash
 # Run paper trading
-python scripts/run_paper.py --config configs/paper_trading.yaml
+autopredict-paper --config configs/paper_trading.yaml
 ```
 
 You can freely experiment with paper trading configurations.
@@ -48,12 +48,12 @@ Live trading uses REAL MONEY and REAL APIs. Follow these steps carefully:
 
 4. **Test in dry-run mode first:**
    ```bash
-   python scripts/run_live.py --config configs/live_trading.yaml --dry-run
+   autopredict-live --config configs/live_trading.yaml --dry-run
    ```
 
 5. **Run live (requires confirmation):**
    ```bash
-   python scripts/run_live.py --config configs/live_trading.yaml
+   autopredict-live --config configs/live_trading.yaml
    # You will be prompted to type "CONFIRM LIVE" to proceed
    ```
 

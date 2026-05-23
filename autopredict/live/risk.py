@@ -11,7 +11,7 @@ from datetime import datetime, timedelta
 from typing import Any
 
 from ..config.schema import RiskConfig
-from .trader import Order
+from ..core.types import Order
 
 
 @dataclass

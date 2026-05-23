@@ -1,6 +1,13 @@
 """Market adapters for different prediction market venues."""
 
 from .base import MarketAdapter
-from .polymarket import PolymarketAdapter, PolymarketMarket, PolymarketEvent
 
-__all__ = ["MarketAdapter", "PolymarketAdapter", "PolymarketMarket", "PolymarketEvent"]
+__all__ = ["MarketAdapter", "PolymarketAdapter"]
+
+
+def __getattr__(name: str):
+    if name == "PolymarketAdapter":
+        from .polymarket import PolymarketAdapter
+
+        return PolymarketAdapter
+    raise AttributeError(name)

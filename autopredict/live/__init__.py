@@ -6,6 +6,7 @@ Provides paper trading simulation and live trading execution with safety control
 from .trader import PaperTrader, LiveTrader, ExecutionReport, Order
 from .risk import RiskManager, RiskCheckResult
 from .monitor import Monitor, TradeLog, DecisionLog
+from .safety_audit import SafetyAuditResult, run_safety_audit
 
 __all__ = [
     "PaperTrader",
@@ -17,4 +18,6 @@ __all__ = [
     "Monitor",
     "TradeLog",
     "DecisionLog",
+    "SafetyAuditResult",
+    "run_safety_audit",
 ]

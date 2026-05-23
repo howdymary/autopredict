@@ -51,4 +51,8 @@ jobs:
         run: |
           cd /tmp
           python -c "import autopredict; import autopredict.config; print(autopredict.__version__)"
-          python -m autopredict.cli backtest
+          python -m autopredict.cli safety-audit
+          if python -m autopredict.cli backtest; then
+            echo "backtest unexpectedly ran without an explicit --dataset"
+            exit 1
+          fi

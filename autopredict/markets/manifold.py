@@ -74,25 +74,7 @@ class ManifoldAdapter:
             ...     "binary_only": True
             ... })
         """
-        # TODO: Implement actual API call
-        # import requests
-        # response = requests.get(f"{self.base_url}/markets")
-        # markets = response.json()
-        #
-        # # Filter binary markets
-        # binary_markets = [m for m in markets if m["outcomeType"] == "BINARY"]
-        #
-        # # Apply filters
-        # if filters:
-        #     if filters.get("min_liquidity"):
-        #         binary_markets = [m for m in binary_markets if m.get("pool", {}).get("YES", 0) + m.get("pool", {}).get("NO", 0) >= filters["min_liquidity"]]
-        #     if filters.get("min_volume"):
-        #         binary_markets = [m for m in binary_markets if m.get("volume24Hours", 0) >= filters["min_volume"]]
-        #
-        # return [self._convert_market(m) for m in binary_markets]
-
-        # Placeholder
-        return []
+        raise NotImplementedError("Manifold market discovery is not implemented")
 
     def get_market(self, market_id: str) -> MarketState | None:
         """Fetch specific market by ID.
@@ -103,12 +85,7 @@ class ManifoldAdapter:
         Returns:
             MarketState if found, None otherwise.
         """
-        # TODO: Implement
-        # import requests
-        # response = requests.get(f"{self.base_url}/market/{market_id}")
-        # if response.status_code == 200:
-        #     return self._convert_market(response.json())
-        return None
+        raise NotImplementedError("Manifold single-market fetch is not implemented")
 
     def place_order(self, order: Order) -> ExecutionReport:
         """Place bet on Manifold.
@@ -128,39 +105,7 @@ class ManifoldAdapter:
         if self.api_key is None:
             raise ValueError("API key required for trading")
 
-        # TODO: Implement actual bet placement
-        # import requests
-        #
-        # # Determine outcome based on side
-        # outcome = "YES" if order.side == OrderSide.BUY else "NO"
-        #
-        # # Manifold uses amount (mana to spend), not size (shares to buy)
-        # # We approximate: amount ≈ size * price
-        # market = self.get_market(order.market_id)
-        # if not market:
-        #     raise ValueError(f"Market {order.market_id} not found")
-        #
-        # price = market.best_ask if order.side == OrderSide.BUY else market.best_bid
-        # amount = order.size * price
-        #
-        # # Place bet
-        # response = requests.post(
-        #     f"{self.base_url}/bet",
-        #     json={
-        #         "contractId": order.market_id,
-        #         "outcome": outcome,
-        #         "amount": amount
-        #     },
-        #     headers={"Authorization": f"Key {self.api_key}"}
-        # )
-        #
-        # if response.status_code != 200:
-        #     raise Exception(f"Bet failed: {response.text}")
-        #
-        # result = response.json()
-        # return self._convert_execution(order, result)
-
-        raise NotImplementedError("Bet placement not yet implemented")
+        raise NotImplementedError("Manifold bet placement is not implemented")
 
     def submit_order(self, order: Order) -> ExecutionReport:
         """Compatibility alias for live-trading adapters."""
@@ -191,23 +136,7 @@ class ManifoldAdapter:
         Returns:
             Position size (shares held).
         """
-        # TODO: Implement
-        # Get user's bets in this market and calculate net position
-        # import requests
-        # response = requests.get(
-        #     f"{self.base_url}/bets",
-        #     params={"contractId": market_id},
-        #     headers={"Authorization": f"Key {self.api_key}"}
-        # )
-        # bets = response.json()
-        #
-        # # Calculate net shares
-        # yes_shares = sum(b["shares"] for b in bets if b["outcome"] == "YES")
-        # no_shares = sum(b["shares"] for b in bets if b["outcome"] == "NO")
-        #
-        # return yes_shares - no_shares
-
-        return 0.0
+        raise NotImplementedError("Manifold position lookup is not implemented")
 
     def get_balance(self) -> float:
         """Get mana balance.
@@ -215,16 +144,7 @@ class ManifoldAdapter:
         Returns:
             Available mana balance.
         """
-        # TODO: Implement
-        # import requests
-        # response = requests.get(
-        #     f"{self.base_url}/me",
-        #     headers={"Authorization": f"Key {self.api_key}"}
-        # )
-        # user = response.json()
-        # return user.get("balance", 0.0)
-
-        return 0.0
+        raise NotImplementedError("Manifold balance lookup is not implemented")
 
     def _convert_market(self, raw_market: dict[str, Any]) -> MarketState:
         """Convert Manifold API response to MarketState.

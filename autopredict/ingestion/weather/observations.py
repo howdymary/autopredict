@@ -1,42 +1,20 @@
-"""Fixture-backed weather observation ingestion."""
+"""Weather observation normalization."""
 
 from __future__ import annotations
 
 from typing import Any, Sequence
 
-from autopredict.ingestion.base import IngestionBatch, TimeSeriesPoint
-from autopredict.ingestion.weather.fixtures import (
-    OBSERVATION_SOURCE,
-    sample_observation_points,
-)
+from autopredict.ingestion.base import IngestionBatch, SourceConfig, TimeSeriesPoint
 
 
-class FixtureWeatherObservationIngestor:
-    """Deterministic weather-observation ingestor."""
-
-    name = "weather.observations.fixture"
-
-    def load_fixture(self) -> IngestionBatch:
-        return load_fixture_observation_batch()
+OBSERVATION_SOURCE = SourceConfig(name="weather.observations", version="v1")
 
 
-def sample_observation_rows() -> tuple[dict[str, Any], ...]:
-    """Return fixture weather observations as row dictionaries."""
-
-    rows: list[dict[str, Any]] = []
-    for point in sample_observation_points():
-        rows.append(
-            {
-                "series": point.series,
-                "observed_at": point.observed_at,
-                "value": point.value,
-                "metadata": dict(point.metadata),
-            }
-        )
-    return tuple(rows)
-
-
-def normalize_observations(rows: Sequence[dict[str, Any]]) -> IngestionBatch:
+def normalize_observations(
+    rows: Sequence[dict[str, Any]],
+    *,
+    source_config: SourceConfig = OBSERVATION_SOURCE,
+) -> IngestionBatch:
     """Normalize observation rows into the shared ingestion batch shape."""
 
     series = tuple(
@@ -49,13 +27,7 @@ def normalize_observations(rows: Sequence[dict[str, Any]]) -> IngestionBatch:
         for row in rows
     )
     return IngestionBatch(
-        source_config=OBSERVATION_SOURCE,
+        source_config=source_config,
         series=series,
         metadata={"domain": "weather"},
     )
-
-
-def load_fixture_observation_batch() -> IngestionBatch:
-    """Return normalized observation batch."""
-
-    return normalize_observations(sample_observation_rows())

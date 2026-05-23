@@ -9,17 +9,50 @@ from autopredict.domains import (
     PoliticsDomainAdapter,
     WeatherDomainAdapter,
 )
+from autopredict.ingestion.finance import normalize_macro_releases, normalize_market_data
+from autopredict.ingestion.politics import normalize_events, normalize_news, normalize_polls
+from autopredict.ingestion.weather import normalize_forecasts, normalize_observations
+from tests.domain_rows import (
+    finance_macro_rows,
+    finance_market_data_rows,
+    politics_event_rows,
+    politics_news_rows,
+    politics_poll_rows,
+    weather_forecast_rows,
+    weather_observation_rows,
+)
+
+
+def _finance_adapter() -> FinanceDomainAdapter:
+    return FinanceDomainAdapter.from_batches(
+        market_data_batch=normalize_market_data(finance_market_data_rows()),
+        macro_batch=normalize_macro_releases(finance_macro_rows()),
+    )
+
+
+def _weather_adapter() -> WeatherDomainAdapter:
+    return WeatherDomainAdapter.from_batches(
+        forecast_batch=normalize_forecasts(weather_forecast_rows()),
+        observation_batch=normalize_observations(weather_observation_rows()),
+    )
+
+
+def _politics_adapter() -> PoliticsDomainAdapter:
+    return PoliticsDomainAdapter.from_batches(
+        news_batch=normalize_news(politics_news_rows()),
+        poll_batch=normalize_polls(politics_poll_rows()),
+        event_batch=normalize_events(politics_event_rows()),
+    )
 
 
 def test_domain_adapters_emit_required_labels_and_features() -> None:
     """Adapters should emit normalized bundles with required metadata labels."""
 
-    for adapter_cls, domain in (
-        (FinanceDomainAdapter, "finance"),
-        (WeatherDomainAdapter, "weather"),
-        (PoliticsDomainAdapter, "politics"),
+    for adapter, domain in (
+        (_finance_adapter(), "finance"),
+        (_weather_adapter(), "weather"),
+        (_politics_adapter(), "politics"),
     ):
-        adapter = adapter_cls.from_fixtures()
         bundle = adapter.build_bundle()
 
         assert isinstance(bundle, DomainFeatureBundle)
@@ -37,8 +70,8 @@ def test_domain_registry_registers_and_returns_adapters() -> None:
     """Domain registries should behave deterministically."""
 
     registry = DomainRegistry()
-    finance = FinanceDomainAdapter.from_fixtures()
-    weather = WeatherDomainAdapter.from_fixtures()
+    finance = _finance_adapter()
+    weather = _weather_adapter()
 
     registry.register(finance.name, finance)
     registry.register(weather.name, weather)

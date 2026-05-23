@@ -1,217 +1,114 @@
 # AutoPredict
 
-AutoPredict is a framework for building and backtesting prediction market trading agents.
+AutoPredict is a small framework for building, backtesting, and improving prediction-market agents without hiding synthetic data behind convenient defaults.
 
-The repo now includes three additive package-native layers alongside the legacy experiment harness:
+The current package has four production-facing surfaces:
 
-- `autopredict.prediction_market` for scaffold-native strategies and decisions
-- `autopredict.evaluation` for proper scoring rules, calibration summaries, and scaffold backtests
-- `autopredict.self_improvement` for mutation, selection, and promotion loops
+- `autopredict.live_scan`: read-only Polymarket Gamma/CLOB scanner for live public market data
+- `autopredict.prediction_market`: typed market snapshots, strategies, decisions, and venue metadata
+- `autopredict.evaluation`: proper scoring rules, calibration summaries, and scaffold backtests
+- `autopredict.self_improvement`: mutation, held-out promotion, archive writing, and frontier tracking
 
-It also now includes a domain-specialization scaffold with model-backed specialist strategies:
+Domain-specialist defaults are conservative by design. Finance, weather, politics, and generic specialists now use market-implied no-edge forecasts until you provide verified training/evaluation data. That prevents packaged examples from masquerading as production alpha.
 
-- `autopredict.ingestion` for fixture-backed evidence normalization
-- `autopredict.domains` for domain adapters and question-conditioned specialist strategies that emit or consume `domain`, `market_family`, and `regime` labels
-
-It keeps the market simulator fixed, the trading logic mutable, and the iteration loop tight:
-
-1. run a backtest
-2. inspect forecast, PnL, and execution metrics
-3. change one config or strategy decision
-4. rerun and compare
-
-## What makes it useful
-
-- Fixed evaluation environment: order book simulation, execution quality, and scoring stay stable across experiments.
-- Mutable strategy surface: you can evolve the agent through `agent.py` and `strategy_configs/*.json`.
-- Execution-aware metrics: the framework treats slippage, fill rate, and market impact as first-class, not afterthoughts.
-- Lightweight local workflow: one small runtime dependency (`PyYAML`) plus the Python standard library.
-
-## Quick start
+## Install
 
 ```bash
 git clone https://github.com/howdymary/autopredict.git
 cd autopredict
 python -m pip install -e .
-
-python -m autopredict.cli backtest
-python -m autopredict.cli score-latest
 ```
 
-The editable install pulls in the package runtime dependencies, including `PyYAML` for configuration loading.
-
-If you want the live Polymarket adapter boundary as well, install the optional extra in an environment that supports the official client:
+For the optional authenticated Polymarket order adapter:
 
 ```bash
 python -m pip install -e ".[polymarket]"
 ```
 
-Example output:
+## Live Scan
 
-```json
-{
-  "total_pnl": 23.848357929641246,
-  "sharpe": 4.426818787804096,
-  "brier_score": 0.25475000000000003,
-  "fill_rate": 0.4420699362191731,
-  "num_trades": 4.0,
-  "forecast_source": "dataset_fair_prob",
-  "agent_feedback": {
-    "weakness": "forecast_input_quality",
-    "hypothesis": "The supplied fair_prob inputs appear poorly calibrated; improve the upstream forecast source before blaming execution logic."
-  }
-}
-```
-
-To run your first full iteration, start with [QUICKSTART.md](QUICKSTART.md).
-
-## Core pieces
-
-- [autopredict/prediction_market](autopredict/prediction_market): scaffold-native strategy interfaces, typed signals/decisions, and legacy bridge adapters
-- [autopredict/evaluation](autopredict/evaluation): proper scoring rules, calibration summaries, and scaffold-level backtests
-- [autopredict/self_improvement](autopredict/self_improvement): deterministic mutation, evaluation, and selection loops
-- [autopredict/ingestion](autopredict/ingestion): fixture-backed evidence normalization for finance, weather, and politics
-- [autopredict/domains](autopredict/domains): domain adapters that translate evidence into normalized feature bundles and split labels
-- [market_env.py](market_env.py): order books, execution simulation, and evaluation metrics
-- [agent.py](agent.py): the mutable baseline agent
-- [run_experiment.py](run_experiment.py): the backtest loop
-- [autopredict/cli.py](autopredict/cli.py): packaged command-line entrypoint
-- [strategy_configs](strategy_configs): tunable strategy parameters
-- [datasets](datasets): sample market snapshots
-- [tests](tests): automated regression coverage
-
-## Step 1 scaffold
-
-Step 1 adds a dedicated prediction-market agent layer under
-`autopredict.prediction_market`. It is intentionally additive and does not
-replace the current backtest loop or baseline strategy.
-
-This package introduces:
-
-- venue-aware snapshots via `VenueConfig` and `MarketSnapshot`
-- typed signal and decision objects such as `MarketSignal` and `AgentDecision`
-- a `PredictionMarketAgent` that cleanly separates signal generation from order generation
-- a strategy registry for later mutation, A/B testing, and selection workflows
-- a bridge adapter, `LegacyMispricedStrategyAdapter`, that runs the existing `MispricedProbabilityStrategy` through the new scaffold
-
-That scaffold now feeds the next package-native layers:
-
-- Step 2 adds proper scoring rules, calibration analysis, and execution-aware backtests
-- Step 3 mutates and ranks strategies through the registry instead of rewriting runtime entrypoints
-
-## Step 2 evaluation
-
-Step 2 adds a dedicated evaluation layer under `autopredict.evaluation`. Its job is to score the new scaffold with proper scoring rules and to keep backtest logic separate from strategy logic.
-
-The evaluation layer is centered on three kinds of outputs:
-
-- proper scoring rules: `brier_score`, `log_score`, and `spherical_score`
-- calibration summaries: bucketed reliability views and forecast-vs-outcome drift
-- scaffold backtests: deterministic, venue-aware checks on fills, slippage, and realized outcomes
-
-That gives later strategy mutation work a stable target: the agent can change, but the scoring surface stays fixed.
-
-## Step 3 self-improvement
-
-Step 3 adds a dedicated self-improvement layer under `autopredict.self_improvement`. It mutates strategy variants, runs them through `autopredict.evaluation`, and keeps the winners behind score and calibration guardrails.
-
-In practice, that means:
-
-- strategy variants can be cloned, perturbed, and re-scored without changing the agent runtime
-- promotion decisions depend on proper scoring rules and calibration, not PnL alone
-- walk-forward promotion can gate mutations on chronological slices, regime blocks, or market-family holdouts
-- the registry and evaluation layers stay stable while the search loop iterates
-
-The goal is a simple improvement loop: generate variants, evaluate them, keep the ones that improve forecast quality and execution quality together.
-
-The default family holdout key is `category`, which uses raw category metadata when available and falls back to `MarketState.category`. Regime splits can either use explicit labels such as `metadata.regime` or auto-bucket market conditions like spread and liquidity.
-
-The package-native ratchet now has a forecast-owned path as well:
+Use the live scanner to inspect public Polymarket data without placing orders or inventing fair values:
 
 ```bash
-python -m autopredict.cli learn improve --dataset datasets/sample_markets.json
+python -m autopredict.cli scan-live --limit 20 --top 5
+python -m autopredict.cli scan-live --events --limit 20 --top 5 --json
+python -m autopredict.cli safety-audit --config configs/live_trading.yaml.example
 ```
 
-That path converts resolved datasets into scaffold snapshots without leaking `fair_prob` into strategy inputs, routes markets through question-conditioned specialist models, and then mutates execution policy around those agent-generated forecasts.
+Market scans report observed Gamma prices plus public CLOB bid/ask/depth when available. Missing order-book data stays `null`/`n/a`; the scanner does not fill gaps with estimates.
 
-## Domain specialization
+## Backtest
 
-Phase 1 adds the evidence and labeling contract, Phase 2 threads that contract into scaffold-native specialist strategies, Phase 3 swaps the heuristic signal logic for lightweight learned question-conditioned models, Phase 4 adds offline train/calibration/evaluation datasets for those defaults, and Phase 5 versions those datasets and attaches model report cards so promotion can compare lineage and held-out quality together:
+Backtests require an explicit resolved-market dataset:
 
-- `autopredict.ingestion` normalizes fixture-backed evidence for finance, weather, and politics
-- `autopredict.domains` turns that evidence into normalized feature bundles with stable `domain`, `market_family`, and `regime` labels
-- domain-specialist strategies consume those bundle-derived snapshot features inside the same scaffold agent and backtester
-- offline dataset manifests now carry stable `dataset_name`, `dataset_version`, and split coverage summaries for each specialist default
-- domain model report cards summarize coverage, held-out calibration stability, and evaluation metrics before model-backed specialists are compared in selection loops
+```bash
+python -m autopredict.cli backtest --dataset /path/to/resolved_markets.json
+python -m autopredict.cli score-latest
+```
 
-In practice, the handoff is: fixture evidence -> `IngestionBatch` -> `DomainFeatureBundle` -> merged snapshot features and labels -> versioned offline dataset -> held-out calibrated domain model -> domain model report card -> specialist strategy -> grouped evaluation and held-out self-improvement splits.
+Each record should represent real historical/resolved market data with the fields consumed by `autopredict.evaluation.load_resolved_snapshots`, such as `market_id`, `market_prob`, `outcome`, and venue/order-book fields. The legacy loop may score a provided `fair_prob` column, but AutoPredict does not ship one.
 
-Those labels now plug directly into backtests, grouped slice diagnostics, and held-out promotion. The default specialist strategies are model-backed, calibrated on held-out examples, and still deterministic and local, so the runtime seam stays reusable for stronger future models.
+## Improve
 
-## What it measures
+Run the forecast-owned ratchet on explicit resolved data:
 
-AutoPredict reports three groups of metrics:
+```bash
+python -m autopredict.cli learn improve \
+  --dataset /path/to/resolved_markets.json \
+  --archive-dir state/meta_harness/archives \
+  --frontier-path state/meta_harness/frontier.json
+```
 
-- Epistemic: `brier_score`, `calibration_by_bucket`
-- Financial: `total_pnl`, `sharpe`, `max_drawdown`, `win_rate`
-- Execution: `avg_slippage_bps`, `fill_rate`, `market_impact_bps`, `implementation_shortfall_bps`
+The archive captures the run artifact, dataset hash, config, final genome, dependency versions, report cards, and warnings. The frontier accepts a run only when its explicit score improves for the same dataset hash, split mode, and strategy kind.
 
-In the legacy evaluator, `sharpe` is intentionally reported as an unannualized per-trade return-to-volatility ratio so configs are not rewarded just for trading more often. The evaluator also exposes `calculate_composite_score(...)` for baseline-relative ratchet decisions.
-On that same legacy loop, `forecast_source` is reported as `dataset_fair_prob`, so Brier and calibration describe the supplied input forecast column rather than a forecast generated by `agent.py`.
+## Data Policy
 
-The framework also returns `agent_feedback`, a short diagnosis of the current bottleneck:
+AutoPredict does not package default market datasets, generated market snapshots, or fabricated domain evidence. Test fixtures live in tests only. Runtime commands either read live venue data or require user-provided real historical/resolved data.
 
-- `execution_quality`
-- `forecast_input_quality`
-- `limit_fill_quality`
-- `calibration`
-- `risk`
-- `selection`
+This matters for production use:
+
+- No command silently falls back to bundled sample markets.
+- No default domain model claims training support from unverified examples.
+- Missing live fields remain missing rather than being replaced by synthetic probabilities.
+- Meta-harness archives include dataset identity so improvements can be audited and reproduced.
+
+## Core Pieces
+
+- [autopredict/live_scan.py](autopredict/live_scan.py): read-only live Polymarket scanner
+- [autopredict/prediction_market](autopredict/prediction_market): strategy interfaces, signals, decisions, and registry
+- [autopredict/evaluation](autopredict/evaluation): scoring, calibration, and backtesting
+- [autopredict/self_improvement](autopredict/self_improvement): mutation, held-out promotion, archives, and frontier store
+- [autopredict/ingestion](autopredict/ingestion): normalization primitives for caller-provided evidence
+- [autopredict/domains](autopredict/domains): adapters and conservative no-edge specialist defaults
+- [market_env.py](market_env.py): legacy order-book simulation
+- [agent.py](agent.py): legacy mutable baseline agent
 
 ## Documentation
 
-Start here:
+Start with [QUICKSTART.md](QUICKSTART.md), then use:
 
-- [QUICKSTART.md](QUICKSTART.md)
-- [docs/README.md](docs/README.md)
-
-Most useful guides:
-
-- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
-- [docs/STRATEGIES.md](docs/STRATEGIES.md)
 - [docs/BACKTESTING.md](docs/BACKTESTING.md)
-- [docs/METRICS.md](docs/METRICS.md)
+- [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - [docs/LEARNING.md](docs/LEARNING.md)
+- [docs/STRATEGIES.md](docs/STRATEGIES.md)
 - [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)
-- [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)
 - [docs/fair_prob_guidelines.md](docs/fair_prob_guidelines.md)
 
-The repo intentionally keeps only the active documentation surface in-tree. Older phase reports,
-one-off analyses, and prompt artifacts were trimmed to keep the public repo compact; rely on
-[docs/archive/README.md](docs/archive/README.md) plus git history if you need provenance.
-
-## Scope today
+## Scope Today
 
 Good today:
 
-- local backtesting
-- strategy and config iteration
-- packaged CLI from a repo checkout or installed wheel
-- execution-aware metrics
-- test coverage for core components
-- a prediction-market-specific scaffold that keeps venue logic separate from the experiment harness
-- a package-native evaluation layer with Brier, log, and spherical scoring
-- grouped slice diagnostics that flag sparse or unstable domain families
-- a self-improvement prototype that mutates, selects, and validates strategy variants across time, regimes, and market families
-- fixture-backed ingestion, domain adapters, versioned offline train/calibration/evaluation datasets, report-carded domain models, and calibrated model-backed specialist strategies for finance, weather, and politics
+- read-only live Polymarket scanning
+- explicit-data backtesting
+- proper scoring, calibration, and grouped slice diagnostics
+- offline self-improvement with chronological, regime, and market-family holdouts
+- meta-harness archives and frontier promotion
 
-Intentionally limited today:
+Intentionally limited:
 
-- live trading is disabled by default
-- the new Polymarket adapter supports real public market discovery and authenticated order-submission plumbing, but the full autonomous live loop is still conservative and incomplete
-- autonomous self-editing is not part of the runtime yet
-- promotion is still deterministic and offline; it supports chronological, regime, and family holdouts, but not live evaluation
-- domain-specialist strategies are question-conditioned and calibrated on offline held-out datasets, but still offline rather than live-data-driven
+- live order execution is disabled unless you wire and enable a venue adapter
+- default domain specialists are neutral no-edge models until verified data is configured
+- self-improvement is offline and audit-oriented, not autonomous live trading
 
 ## License
 

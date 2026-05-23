@@ -1,4 +1,4 @@
-"""Tests for weather ingestion fixtures and normalization."""
+"""Tests for weather ingestion normalization."""
 
 from __future__ import annotations
 
@@ -8,16 +8,15 @@ from autopredict.ingestion.weather import (
     build_weather_features,
     normalize_forecasts,
     normalize_observations,
-    sample_forecast_rows,
-    sample_observation_rows,
 )
+from tests.domain_rows import weather_forecast_rows, weather_observation_rows
 
 
-def test_weather_ingestion_normalizes_fixture_rows() -> None:
-    """Fixture rows should normalize into shared weather batches."""
+def test_weather_ingestion_normalizes_rows() -> None:
+    """Observed rows should normalize into shared weather batches."""
 
-    forecast_batch = normalize_forecasts(sample_forecast_rows())
-    observation_batch = normalize_observations(sample_observation_rows())
+    forecast_batch = normalize_forecasts(weather_forecast_rows())
+    observation_batch = normalize_observations(weather_observation_rows())
 
     assert forecast_batch.source.domain == "weather"
     assert len(forecast_batch.records) == 2
@@ -30,11 +29,11 @@ def test_weather_ingestion_normalizes_fixture_rows() -> None:
 
 
 def test_weather_feature_builder_emits_stable_values() -> None:
-    """Feature extraction should be deterministic for fixture-backed weather data."""
+    """Feature extraction should be deterministic for provided weather data."""
 
     features = build_weather_features(
-        normalize_forecasts(sample_forecast_rows()),
-        normalize_observations(sample_observation_rows()),
+        normalize_forecasts(weather_forecast_rows()),
+        normalize_observations(weather_observation_rows()),
     )
 
     assert features["num_forecasts"] == 2

@@ -22,6 +22,18 @@ from autopredict.prediction_market import (
     VenueName,
     create_default_registry,
 )
+from autopredict.ingestion.finance import normalize_macro_releases, normalize_market_data
+from autopredict.ingestion.politics import normalize_events, normalize_news, normalize_polls
+from autopredict.ingestion.weather import normalize_forecasts, normalize_observations
+from tests.domain_rows import (
+    finance_macro_rows,
+    finance_market_data_rows,
+    politics_event_rows,
+    politics_news_rows,
+    politics_poll_rows,
+    weather_forecast_rows,
+    weather_observation_rows,
+)
 
 
 def _market(market_id: str, category: MarketCategory, market_prob: float) -> MarketState:
@@ -38,6 +50,28 @@ def _market(market_id: str, category: MarketCategory, market_prob: float) -> Mar
     )
 
 
+def _finance_bundle():
+    return FinanceDomainAdapter.from_batches(
+        market_data_batch=normalize_market_data(finance_market_data_rows()),
+        macro_batch=normalize_macro_releases(finance_macro_rows()),
+    ).build_bundle()
+
+
+def _weather_bundle():
+    return WeatherDomainAdapter.from_batches(
+        forecast_batch=normalize_forecasts(weather_forecast_rows()),
+        observation_batch=normalize_observations(weather_observation_rows()),
+    ).build_bundle()
+
+
+def _politics_bundle():
+    return PoliticsDomainAdapter.from_batches(
+        news_batch=normalize_news(politics_news_rows()),
+        poll_batch=normalize_polls(politics_poll_rows()),
+        event_batch=normalize_events(politics_event_rows()),
+    ).build_bundle()
+
+
 def test_default_strategy_registry_includes_domain_specialists() -> None:
     """The default scaffold registry should expose Phase 2 domain specialists."""
 
@@ -48,29 +82,29 @@ def test_default_strategy_registry_includes_domain_specialists() -> None:
     assert "politics_specialist" in registry.names()
 
 
-def test_domain_specialists_trade_from_domain_bundles_in_backtests() -> None:
-    """Backtests should thread domain bundles through to specialist strategies and results."""
+def test_domain_specialists_hold_with_neutral_market_implied_default_models() -> None:
+    """Default production models should not trade without verified edge data."""
 
     cases = (
         (
             "finance-market",
             MarketCategory.ECONOMICS,
             0.40,
-            FinanceDomainAdapter.from_fixtures().build_bundle(),
+            _finance_bundle(),
             FinanceSpecialistStrategy(),
         ),
         (
             "weather-market",
             MarketCategory.SCIENCE,
             0.38,
-            WeatherDomainAdapter.from_fixtures().build_bundle(),
+            _weather_bundle(),
             WeatherSpecialistStrategy(),
         ),
         (
             "politics-market",
             MarketCategory.POLITICS,
             0.35,
-            PoliticsDomainAdapter.from_fixtures().build_bundle(),
+            _politics_bundle(),
             PoliticsSpecialistStrategy(),
         ),
     )
@@ -86,26 +120,25 @@ def test_domain_specialists_trade_from_domain_bundles_in_backtests() -> None:
                     market=_market(market_id, category, market_prob),
                     venue=venue,
                     outcome=1,
-                    metadata={"source": "fixture"},
+                    metadata={"source": "unit_test"},
                     domain_bundle=bundle,
                 ),
             ),
         )
 
-        assert result.decisions[0].status == DecisionStatus.TRADE
+        assert result.decisions[0].status == DecisionStatus.HOLD
         assert result.decisions[0].metadata["domain"] == bundle.domain
         assert result.forecasts[0].metadata["domain"] == bundle.metadata["domain"]
         assert result.forecasts[0].metadata["market_family"] == bundle.metadata["market_family"]
-        assert result.forecasts[0].metadata["model"].endswith("_question_conditioned")
-        assert result.trades[0].metadata["regime"] == bundle.metadata["regime"]
-        assert result.trades[0].metadata["strategy"] == strategy.name
-        assert result.trades[0].metadata["model"].endswith("_question_conditioned")
+        assert result.forecasts[0].metadata["forecast_source"] == "market_implied_no_edge"
+        assert result.forecasts[0].probability == market_prob
+        assert result.trades == ()
 
 
 def test_routed_strategy_dispatches_weather_markets_to_weather_specialist() -> None:
     """Weather-labeled markets should use the weather specialist rather than generic fallback."""
 
-    bundle = WeatherDomainAdapter.from_fixtures().build_bundle()
+    bundle = _weather_bundle()
     venue = VenueConfig(name=VenueName.POLYMARKET, fee_bps=10.0)
     backtester = PredictionMarketBacktester()
 
@@ -116,12 +149,13 @@ def test_routed_strategy_dispatches_weather_markets_to_weather_specialist() -> N
                 market=_market("weather-routed", MarketCategory.SCIENCE, 0.39),
                 venue=venue,
                 outcome=1,
-                metadata={"source": "fixture"},
+                metadata={"source": "unit_test"},
                 domain_bundle=bundle,
             ),
         ),
     )
 
-    assert result.decisions[0].status == DecisionStatus.TRADE
+    assert result.decisions[0].status == DecisionStatus.HOLD
     assert result.forecasts[0].metadata["domain"] == "weather"
-    assert result.trades[0].metadata["strategy"] == "weather_specialist"
+    assert result.forecasts[0].metadata["forecast_source"] == "market_implied_no_edge"
+    assert result.trades == ()

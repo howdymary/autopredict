@@ -1,4 +1,4 @@
-"""Registry for named fixture-backed ingestors."""
+"""Registry for named evidence ingestors."""
 
 from __future__ import annotations
 
@@ -6,7 +6,7 @@ from autopredict.ingestion.base import Ingestor
 
 
 class IngestionRegistry:
-    """Small deterministic registry for fixture-backed ingestors."""
+    """Small deterministic registry for evidence ingestors."""
 
     def __init__(self) -> None:
         self._ingestors: dict[str, Ingestor] = {}

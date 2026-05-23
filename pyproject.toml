@@ -63,7 +63,6 @@ include = ["autopredict*", "validation*"]
 autopredict = [
     "_defaults/*.json",
     "_defaults/*.md",
-    "_defaults/datasets/*.json",
     "_defaults/strategy_configs/*.json",
 ]
 

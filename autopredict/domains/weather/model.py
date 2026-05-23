@@ -1,24 +1,31 @@
-"""Default question-conditioned weather model backed by offline datasets."""
+"""Default weather model.
+
+AutoPredict no longer bundles offline weather examples as product data. The
+default model is a neutral market-implied fallback until a verified model is
+configured explicitly.
+"""
 
 from __future__ import annotations
 
 from functools import lru_cache
 
 from autopredict.domains.modeling import (
+    MarketImpliedNoEdgeModel,
     QuestionConditionedDataset,
     QuestionConditionedExample,
-    QuestionConditionedLinearModel,
-    load_question_conditioned_dataset,
 )
-
-WEATHER_DATASET_FILE = "weather_domain_examples.json"
 
 
 @lru_cache(maxsize=1)
 def weather_dataset() -> QuestionConditionedDataset:
-    """Return the cached offline weather dataset."""
+    """Return the configured weather dataset metadata."""
 
-    return load_question_conditioned_dataset(WEATHER_DATASET_FILE)
+    return QuestionConditionedDataset(
+        name="no_verified_weather_dataset",
+        version="none",
+        domain="weather",
+        examples_by_split={},
+    )
 
 
 def weather_training_examples() -> tuple[QuestionConditionedExample, ...]:
@@ -40,14 +47,7 @@ def weather_evaluation_examples() -> tuple[QuestionConditionedExample, ...]:
 
 
 @lru_cache(maxsize=1)
-def build_default_weather_model() -> QuestionConditionedLinearModel:
-    """Return the cached calibrated weather question-conditioned model."""
+def build_default_weather_model() -> MarketImpliedNoEdgeModel:
+    """Return the production-safe neutral weather model."""
 
-    dataset = weather_dataset()
-    return QuestionConditionedLinearModel.fit_with_calibration(
-        "weather_question_conditioned",
-        weather_training_examples(),
-        weather_calibration_examples(),
-        evaluation_examples=weather_evaluation_examples(),
-        dataset=dataset,
-    )
+    return MarketImpliedNoEdgeModel("weather_market_implied_no_edge", "weather")

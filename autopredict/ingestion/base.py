@@ -78,7 +78,7 @@ class TimeSeriesPoint:
 
 @dataclass(frozen=True)
 class IngestionBatch:
-    """One normalized fixture-backed batch from an ingestor."""
+    """One normalized evidence batch from an ingestor."""
 
     source_config: SourceConfig
     evidence: tuple[EvidenceRecord, ...] = ()
@@ -120,9 +120,9 @@ class IngestionBatch:
 
 
 class Ingestor(Protocol):
-    """Protocol for deterministic fixture-backed ingestors."""
+    """Protocol for evidence ingestors that return observed data."""
 
     name: str
 
-    def load_fixture(self) -> IngestionBatch:
-        """Return a normalized local batch."""
+    def load_batch(self) -> IngestionBatch:
+        """Return a normalized evidence batch."""

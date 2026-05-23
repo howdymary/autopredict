@@ -1,24 +1,31 @@
-"""Default question-conditioned politics model backed by offline datasets."""
+"""Default politics model.
+
+AutoPredict no longer bundles offline politics examples as product data. The
+default model is a neutral market-implied fallback until a verified model is
+configured explicitly.
+"""
 
 from __future__ import annotations
 
 from functools import lru_cache
 
 from autopredict.domains.modeling import (
+    MarketImpliedNoEdgeModel,
     QuestionConditionedDataset,
     QuestionConditionedExample,
-    QuestionConditionedLinearModel,
-    load_question_conditioned_dataset,
 )
-
-POLITICS_DATASET_FILE = "politics_domain_examples.json"
 
 
 @lru_cache(maxsize=1)
 def politics_dataset() -> QuestionConditionedDataset:
-    """Return the cached offline politics dataset."""
+    """Return the configured politics dataset metadata."""
 
-    return load_question_conditioned_dataset(POLITICS_DATASET_FILE)
+    return QuestionConditionedDataset(
+        name="no_verified_politics_dataset",
+        version="none",
+        domain="politics",
+        examples_by_split={},
+    )
 
 
 def politics_training_examples() -> tuple[QuestionConditionedExample, ...]:
@@ -40,14 +47,7 @@ def politics_evaluation_examples() -> tuple[QuestionConditionedExample, ...]:
 
 
 @lru_cache(maxsize=1)
-def build_default_politics_model() -> QuestionConditionedLinearModel:
-    """Return the cached calibrated politics question-conditioned model."""
+def build_default_politics_model() -> MarketImpliedNoEdgeModel:
+    """Return the production-safe neutral politics model."""
 
-    dataset = politics_dataset()
-    return QuestionConditionedLinearModel.fit_with_calibration(
-        "politics_question_conditioned",
-        politics_training_examples(),
-        politics_calibration_examples(),
-        evaluation_examples=politics_evaluation_examples(),
-        dataset=dataset,
-    )
+    return MarketImpliedNoEdgeModel("politics_market_implied_no_edge", "politics")

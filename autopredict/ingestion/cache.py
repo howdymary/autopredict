@@ -1,4 +1,4 @@
-"""Minimal local cache helpers for deterministic fixture-backed data."""
+"""Minimal local cache helpers for normalized evidence data."""
 
 from __future__ import annotations
 
@@ -9,7 +9,7 @@ from typing import Any
 
 
 @dataclass(frozen=True)
-class FixtureCache:
+class EvidenceCache:
     """Tiny JSON cache rooted at a local directory."""
 
     root: Path

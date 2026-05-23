@@ -12,12 +12,13 @@ from pathlib import Path
 from typing import Any, Callable, Protocol
 
 import sys
-_root = Path(__file__).resolve().parent.parent.parent
+
+_root = Path(__file__).resolve().parents[2]
 if str(_root) not in sys.path:
     sys.path.insert(0, str(_root))
 
-from agent import AutoPredictAgent, MarketState, ProposedOrder
-from market_env import (
+from autopredict.agent import AutoPredictAgent, MarketState, ProposedOrder
+from autopredict.market_env import (
     BookLevel,
     ExecutionEngine,
     ExecutionReport,

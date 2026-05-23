@@ -8,8 +8,7 @@ This script demonstrates how to:
 5. Save results to JSON/CSV
 
 Usage:
-    python examples/backtest_mispriced_prob.py
-    python examples/backtest_mispriced_prob.py --data datasets/sample_markets_500.json
+    python examples/backtest_mispriced_prob.py --data /path/to/resolved_markets.json
     python examples/backtest_mispriced_prob.py --config configs/aggressive.json --out results/
 """
 
@@ -24,7 +23,7 @@ if str(_root) not in sys.path:
     sys.path.insert(0, str(_root))
 
 # Direct imports from root-level modules
-from agent import AutoPredictAgent, AgentConfig
+from autopredict.agent import AutoPredictAgent, AgentConfig
 from autopredict.backtest.engine import (
     BacktestConfig,
     BacktestEngine,
@@ -41,8 +40,8 @@ def main():
     parser.add_argument(
         "--data",
         type=str,
-        default="datasets/sample_markets_100.json",
-        help="Path to market data JSON file",
+        required=True,
+        help="Path to real resolved market data JSON file",
     )
     parser.add_argument(
         "--config",
@@ -71,7 +70,9 @@ def main():
 
     # Resolve paths
     project_root = Path(__file__).resolve().parent.parent
-    data_path = project_root / args.data
+    data_path = Path(args.data)
+    if not data_path.is_absolute():
+        data_path = project_root / data_path
     output_dir = project_root / args.out
 
     print("=" * 70)

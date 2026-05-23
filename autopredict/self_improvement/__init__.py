@@ -1,5 +1,17 @@
 """Self-improvement loop prototype for prediction-market strategy evolution."""
 
+from autopredict.self_improvement.archive import (
+    build_run_archive,
+    dataset_sha256,
+    load_run_archive,
+    write_run_archive,
+)
+from autopredict.self_improvement.frontier import (
+    FrontierPromotion,
+    FrontierStore,
+    frontier_key,
+    promote_archive,
+)
 from autopredict.self_improvement.loop import (
     ImprovementCycleReport,
     ImprovementLoopConfig,
@@ -28,13 +40,20 @@ from autopredict.self_improvement.selection import (
 )
 
 __all__ = [
+    "build_run_archive",
     "CandidateEvaluation",
+    "dataset_sha256",
     "default_forecast_owned_genome",
     "ForecastRatchetSummary",
+    "FrontierPromotion",
+    "FrontierStore",
+    "frontier_key",
     "ImprovementCycleReport",
     "ImprovementLoopConfig",
     "improvement_config_with_population",
+    "load_run_archive",
     "MutationConfig",
+    "promote_archive",
     "run_forecast_owned_ratchet",
     "SelectionConfig",
     "SelectionOutcome",
@@ -46,4 +65,5 @@ __all__ = [
     "WalkForwardFoldReport",
     "WalkForwardReport",
     "WalkForwardSplit",
+    "write_run_archive",
 ]

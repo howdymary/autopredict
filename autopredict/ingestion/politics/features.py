@@ -1,4 +1,4 @@
-"""Feature builders for fixture-backed politics evidence."""
+"""Feature builders for politics evidence."""
 
 from __future__ import annotations
 

@@ -1,4 +1,4 @@
-"""Feature builders for fixture-backed finance evidence."""
+"""Feature builders for finance evidence."""
 
 from __future__ import annotations
 

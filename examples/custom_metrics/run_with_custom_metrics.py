@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sys
+import argparse
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).parent.parent.parent))
@@ -13,12 +14,11 @@ from autopredict.market_env import evaluate_all, ForecastRecord, TradeRecord
 from examples.custom_metrics.custom_metrics import calculate_all_custom_metrics
 
 
-def run_with_custom_metrics():
+def run_with_custom_metrics(dataset_path: Path):
     """Run backtest and add custom metrics to output."""
 
     # Paths
     config_path = Path(__file__).parent.parent.parent / "strategy_configs" / "baseline.json"
-    dataset_path = Path(__file__).parent.parent.parent / "datasets" / "sample_markets.json"
     guidance_path = Path(__file__).parent.parent.parent / "strategy.md"
 
     print("="*80)
@@ -124,4 +124,7 @@ def run_with_custom_metrics():
 
 
 if __name__ == "__main__":
-    run_with_custom_metrics()
+    parser = argparse.ArgumentParser(description="Run a backtest and add custom metrics")
+    parser.add_argument("--dataset", required=True, help="Path to real resolved market data JSON")
+    parsed = parser.parse_args()
+    run_with_custom_metrics(Path(parsed.dataset))

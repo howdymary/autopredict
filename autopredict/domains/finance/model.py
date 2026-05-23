@@ -1,24 +1,34 @@
-"""Default question-conditioned finance model backed by offline datasets."""
+"""Default finance model.
+
+AutoPredict no longer bundles offline finance examples as product data. The
+default model is therefore a neutral market-implied fallback; users can wire a
+verified dataset/model explicitly before enabling forecast-owned trading.
+"""
 
 from __future__ import annotations
 
 from functools import lru_cache
 
 from autopredict.domains.modeling import (
+    MarketImpliedNoEdgeModel,
     QuestionConditionedDataset,
     QuestionConditionedExample,
-    QuestionConditionedLinearModel,
-    load_question_conditioned_dataset,
 )
-
-FINANCE_DATASET_FILE = "finance_domain_examples.json"
 
 
 @lru_cache(maxsize=1)
 def finance_dataset() -> QuestionConditionedDataset:
-    """Return the cached offline finance dataset."""
+    """Return the configured finance dataset metadata.
 
-    return load_question_conditioned_dataset(FINANCE_DATASET_FILE)
+    The default package contains no bundled supervised examples.
+    """
+
+    return QuestionConditionedDataset(
+        name="no_verified_finance_dataset",
+        version="none",
+        domain="finance",
+        examples_by_split={},
+    )
 
 
 def finance_training_examples() -> tuple[QuestionConditionedExample, ...]:
@@ -40,14 +50,7 @@ def finance_evaluation_examples() -> tuple[QuestionConditionedExample, ...]:
 
 
 @lru_cache(maxsize=1)
-def build_default_finance_model() -> QuestionConditionedLinearModel:
-    """Return the cached calibrated finance question-conditioned model."""
+def build_default_finance_model() -> MarketImpliedNoEdgeModel:
+    """Return the production-safe neutral finance model."""
 
-    dataset = finance_dataset()
-    return QuestionConditionedLinearModel.fit_with_calibration(
-        "finance_question_conditioned",
-        finance_training_examples(),
-        finance_calibration_examples(),
-        evaluation_examples=finance_evaluation_examples(),
-        dataset=dataset,
-    )
+    return MarketImpliedNoEdgeModel("finance_market_implied_no_edge", "finance")

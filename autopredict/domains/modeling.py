@@ -215,6 +215,91 @@ class ModelPrediction:
 
 
 @dataclass(frozen=True)
+class MarketImpliedNoEdgeModel:
+    """Production-safe fallback that never fabricates alpha.
+
+    The model returns the observed market probability as the fair probability.
+    That keeps live runs useful for routing, logging, and safety checks while
+    preventing the agent from trading on bundled or synthetic model beliefs.
+    """
+
+    name: str
+    domain: str
+
+    @property
+    def training_summary(self) -> dict[str, Any]:
+        """Return a model card explaining why this model has no learned edge."""
+
+        return {
+            "model": self.name,
+            "domain": self.domain,
+            "forecast_source": "market_implied_no_edge",
+            "verified_training_data": False,
+            "dataset_name": None,
+            "dataset_version": None,
+            "report_card": {
+                "domain": self.domain,
+                "model_name": self.name,
+                "dataset_name": None,
+                "dataset_version": None,
+                "coverage_score": 0.0,
+                "held_out_calibration_stability": None,
+                "selection_features": {
+                    "coverage_score": 0.0,
+                    "held_out_calibration_stability": 0.0,
+                },
+            },
+        }
+
+    def predict(
+        self,
+        question: str,
+        features: Mapping[str, Any],
+        labels: Mapping[str, Any],
+    ) -> ModelPrediction:
+        """Return the live market probability as a neutral forecast."""
+
+        del question
+        market_prob = float(features.get("market_prob", 0.5))
+        market_prob = min(max(market_prob, 0.0), 1.0)
+        domain = str(labels.get("domain", self.domain))
+        metadata = {
+            "model": self.name,
+            "domain": domain,
+            "forecast_source": "market_implied_no_edge",
+            "verified_training_data": False,
+            "dataset_name": None,
+            "dataset_version": None,
+            "dataset_domain": domain,
+            "selection_features": {
+                "coverage_score": 0.0,
+                "held_out_calibration_stability": 0.0,
+            },
+            "report_card": {
+                "domain": domain,
+                "model_name": self.name,
+                "dataset_name": None,
+                "dataset_version": None,
+                "coverage_score": 0.0,
+                "held_out_calibration_stability": None,
+                "selection_features": {
+                    "coverage_score": 0.0,
+                    "held_out_calibration_stability": 0.0,
+                },
+            },
+        }
+        return ModelPrediction(
+            probability=market_prob,
+            confidence=0.5,
+            rationale=(
+                "No verified domain model dataset is configured; using the live "
+                "market-implied probability as a neutral no-edge forecast."
+            ),
+            metadata=metadata,
+        )
+
+
+@dataclass(frozen=True)
 class QuestionConditionedLinearModel:
     """Small deterministic logistic model over numeric features and question tokens."""
 
@@ -564,10 +649,12 @@ class QuestionConditionedLinearModel:
         return raw_score
 
 
-def load_question_conditioned_dataset(dataset_filename: str) -> QuestionConditionedDataset:
-    """Load one offline domain dataset from package data."""
+def load_question_conditioned_dataset(dataset_path: str | Path) -> QuestionConditionedDataset:
+    """Load one external verified domain dataset from a JSON file."""
 
-    path = _dataset_root() / dataset_filename
+    path = Path(dataset_path)
+    if not path.exists():
+        raise FileNotFoundError(f"domain dataset not found: {path}")
     with open(path, "r", encoding="utf-8") as handle:
         payload = json.load(handle)
 
@@ -716,7 +803,3 @@ def _fit_sigmoid_calibrator(
             scale -= learning_rate * error * raw_score
             scale = max(scale, 0.1)
     return bias, scale
-
-
-def _dataset_root() -> Path:
-    return Path(__file__).resolve().parents[1] / "_defaults" / "datasets"

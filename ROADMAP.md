@@ -12,7 +12,7 @@ AutoPredict aims to democratize algorithmic prediction market trading by providi
 - Self-improvement capabilities
 - Production-ready deployment tools
 
-## Current State (March 2026)
+## Current State (May 2026)
 
 **Version: 0.1.0 - Core Framework**
 
@@ -27,14 +27,16 @@ Completed:
 - ✅ Extensive documentation
 
 Current capabilities:
-- Backtest strategies on synthetic data
+- Scan live public Polymarket data in read-only mode
+- Backtest strategies on explicit real resolved-market datasets
 - Evaluate performance across multiple dimensions
 - Iterate on strategy logic and parameters
-- Generate synthetic market datasets
+- Archive improvement runs and promote comparable frontier entries
 
 Current limitations:
-- No real market adapters (Polymarket, Kalshi, etc.)
-- Simulation-only (no paper trading or live trading)
+- Live order execution is disabled unless a venue adapter is explicitly configured
+- No bundled market datasets or generated default snapshots
+- Simulation-first evaluation for strategy promotion
 - Single-threaded execution
 - Limited learning algorithms
 - No portfolio management across strategies

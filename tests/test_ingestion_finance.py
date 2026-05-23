@@ -1,4 +1,4 @@
-"""Tests for finance ingestion fixtures and normalization."""
+"""Tests for finance ingestion normalization."""
 
 from __future__ import annotations
 
@@ -8,16 +8,15 @@ from autopredict.ingestion.finance import (
     build_finance_features,
     normalize_macro_releases,
     normalize_market_data,
-    sample_macro_rows,
-    sample_market_data_rows,
 )
+from tests.domain_rows import finance_macro_rows, finance_market_data_rows
 
 
-def test_finance_ingestion_normalizes_fixture_rows() -> None:
-    """Fixture rows should normalize into shared ingestion batches."""
+def test_finance_ingestion_normalizes_rows() -> None:
+    """Observed rows should normalize into shared ingestion batches."""
 
-    market_batch = normalize_market_data(sample_market_data_rows())
-    macro_batch = normalize_macro_releases(sample_macro_rows())
+    market_batch = normalize_market_data(finance_market_data_rows())
+    macro_batch = normalize_macro_releases(finance_macro_rows())
 
     assert market_batch.source.domain == "finance"
     assert market_batch.count == 4
@@ -32,11 +31,11 @@ def test_finance_ingestion_normalizes_fixture_rows() -> None:
 
 
 def test_finance_feature_builder_emits_stable_values() -> None:
-    """Feature extraction should be deterministic for fixture-backed data."""
+    """Feature extraction should be deterministic for provided data."""
 
     features = build_finance_features(
-        normalize_market_data(sample_market_data_rows()),
-        normalize_macro_releases(sample_macro_rows()),
+        normalize_market_data(finance_market_data_rows()),
+        normalize_macro_releases(finance_macro_rows()),
     )
 
     assert features["num_series_points"] == 4

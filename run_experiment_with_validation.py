@@ -8,16 +8,26 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+import sys
 
-from .agent import AutoPredictAgent, MarketState
-from .market_env import ExecutionEngine, ForecastRecord, TradeRecord, evaluate_all
-from .run_experiment import _build_order_book, _realized_pnl
-from .validation import FairProbValidator, ValidationWarning
+if __package__ in {None, ""}:
+    sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+    from autopredict.agent import AutoPredictAgent, MarketState
+    from autopredict.market_env import ExecutionEngine, ForecastRecord, TradeRecord, evaluate_all
+    from autopredict.run_experiment import _build_order_book, _realized_pnl
+    from autopredict.validation import FairProbValidator, ValidationWarning
+else:
+    from .agent import AutoPredictAgent, MarketState
+    from .market_env import ExecutionEngine, ForecastRecord, TradeRecord, evaluate_all
+    from .run_experiment import _build_order_book, _realized_pnl
+    from .validation import FairProbValidator, ValidationWarning
 
 
 def _load_json(path: str | Path) -> dict | list:
     with Path(path).open("r", encoding="utf-8") as handle:
         return json.load(handle)
+
+
 def run_backtest_with_validation(
     *,
     config_path: str | Path,
@@ -223,19 +233,18 @@ def run_backtest_with_validation(
     return metrics
 
 
-# Example usage
 if __name__ == "__main__":
-    import sys
-    from pathlib import Path
+    import argparse
 
-    # Default paths
-    config_path = Path("/Users/howdymary/Documents/New project/autopredict/strategy_configs/baseline.json")
-    dataset_path = Path("/Users/howdymary/Documents/New project/autopredict/datasets/sample_markets.json")
+    parser = argparse.ArgumentParser(description="Run a backtest with validation")
+    parser.add_argument("--config", required=True, help="Path to strategy config JSON")
+    parser.add_argument("--dataset", required=True, help="Path to real resolved market data JSON")
+    parsed = parser.parse_args()
 
     print("\nRunning backtest WITH validation (warnings only, no skipping)...\n")
     results = run_backtest_with_validation(
-        config_path=config_path,
-        dataset_path=dataset_path,
+        config_path=Path(parsed.config),
+        dataset_path=Path(parsed.dataset),
         enable_validation=True,
         skip_on_warnings=False,  # Show warnings but don't skip
     )

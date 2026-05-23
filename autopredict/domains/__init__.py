@@ -26,6 +26,7 @@ from autopredict.domains.generic import (
 from autopredict.domains.modeling import (
     DatasetSplitSummary,
     DomainModelReportCard,
+    MarketImpliedNoEdgeModel,
     ModelPrediction,
     QuestionConditionedDataset,
     QuestionConditionedExample,
@@ -64,6 +65,7 @@ __all__ = [
     "FinanceDomainAdapter",
     "FinanceSpecialistStrategy",
     "GenericSpecialistStrategy",
+    "MarketImpliedNoEdgeModel",
     "ModelPrediction",
     "QuestionConditionedDataset",
     "PoliticsDomainAdapter",

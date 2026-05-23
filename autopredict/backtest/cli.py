@@ -10,19 +10,19 @@ import sys
 from pathlib import Path
 from typing import Any
 
-# Add parent directory to path for imports
-_root = Path(__file__).resolve().parent.parent.parent
+# Add the workspace parent so legacy modules resolve through the package path.
+_root = Path(__file__).resolve().parents[2]
 if str(_root) not in sys.path:
     sys.path.insert(0, str(_root))
 
-from agent import AutoPredictAgent
+from autopredict.agent import AutoPredictAgent
 from .engine import BacktestConfig, BacktestEngine, load_snapshots_from_json
 from .analysis import PerformanceAnalyzer
 
 
 def run_backtest_command(
     strategy: str = "mispriced_probability",
-    data: str | Path = "datasets/sample_markets_100.json",
+    data: str | Path | None = None,
     config: str | Path | None = None,
     out: str | Path = "results/backtest.json",
     bankroll: float = 1000.0,
@@ -32,7 +32,7 @@ def run_backtest_command(
 
     Args:
         strategy: Strategy name (currently only "mispriced_probability")
-        data: Path to market data JSON
+        data: Path to user-provided real historical/resolved market data JSON
         config: Optional path to strategy config JSON
         out: Output path for results
         bankroll: Starting bankroll
@@ -42,11 +42,13 @@ def run_backtest_command(
         Dictionary with backtest results
 
     Example:
-        >>> results = run_backtest_command(
-        ...     data="datasets/sample_markets_100.json",
-        ...     out="results/backtest.json"
-        ... )
+        >>> results = run_backtest_command(data="resolved_markets.json")
     """
+    if data is None:
+        raise ValueError(
+            "data is required; AutoPredict does not ship synthetic default datasets"
+        )
+
     # Resolve paths
     data_path = Path(data)
     out_path = Path(out)

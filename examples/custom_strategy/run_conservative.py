@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import sys
+import argparse
 from pathlib import Path
 
 # Add parent directory to path
@@ -14,11 +15,10 @@ from autopredict.run_experiment import run_backtest
 from examples.custom_strategy.conservative_agent import ConservativeAgent
 
 
-def run_comparison():
+def run_comparison(dataset_path: Path):
     """Run both baseline and conservative agents, compare results."""
 
     config_path = Path(__file__).parent.parent.parent / "strategy_configs" / "baseline.json"
-    dataset_path = Path(__file__).parent.parent.parent / "datasets" / "sample_markets.json"
     guidance_path = Path(__file__).parent.parent.parent / "strategy.md"
 
     print("="*80)
@@ -106,4 +106,7 @@ def run_comparison():
 
 
 if __name__ == "__main__":
-    run_comparison()
+    parser = argparse.ArgumentParser(description="Compare baseline and conservative agents")
+    parser.add_argument("--dataset", required=True, help="Path to real resolved market data JSON")
+    parsed = parser.parse_args()
+    run_comparison(Path(parsed.dataset))

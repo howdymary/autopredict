@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from pathlib import Path
 from typing import Any
 
@@ -25,10 +24,33 @@ def datasets_path(base_path: Path) -> Path:
 
 
 @pytest.fixture
-def sample_markets(datasets_path: Path) -> list[dict[str, Any]]:
-    """Load sample markets from minimal test dataset."""
-    with open(datasets_path / "test_markets_minimal.json") as f:
-        return json.load(f)
+def resolved_markets_fixture(datasets_path: Path) -> list[dict[str, Any]]:
+    """Return a small deterministic test fixture, not product data."""
+    del datasets_path
+    return [
+        {
+            "market_id": "fixture-market-1",
+            "market_prob": 0.50,
+            "fair_prob": 0.58,
+            "outcome": 1,
+            "time_to_expiry_hours": 24.0,
+            "order_book": {
+                "bids": [[0.49, 100.0]],
+                "asks": [[0.51, 100.0]],
+            },
+        },
+        {
+            "market_id": "fixture-market-2",
+            "market_prob": 0.62,
+            "fair_prob": 0.55,
+            "outcome": 0,
+            "time_to_expiry_hours": 48.0,
+            "order_book": {
+                "bids": [[0.61, 100.0]],
+                "asks": [[0.63, 100.0]],
+            },
+        },
+    ]
 
 
 @pytest.fixture

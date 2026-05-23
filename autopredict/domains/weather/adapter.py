@@ -1,27 +1,43 @@
-"""Weather domain adapter for fixture-backed evidence."""
+"""Weather domain adapter for caller-provided evidence."""
 
 from __future__ import annotations
 
 from autopredict.domains.base import DomainFeatureBundle
+from autopredict.ingestion.base import IngestionBatch
 from autopredict.ingestion.weather.features import build_weather_features
-from autopredict.ingestion.weather.forecasts import load_fixture_forecast_batch
-from autopredict.ingestion.weather.observations import load_fixture_observation_batch
 
 
 class WeatherDomainAdapter:
-    """Build a normalized weather bundle from fixture-backed evidence."""
+    """Build a normalized weather bundle from explicit evidence batches."""
 
     name = "weather"
 
-    @classmethod
-    def from_fixtures(cls) -> "WeatherDomainAdapter":
-        """Return a fixture-backed weather adapter."""
+    def __init__(
+        self,
+        *,
+        forecast_batch: IngestionBatch,
+        observation_batch: IngestionBatch,
+    ) -> None:
+        self.forecast_batch = forecast_batch
+        self.observation_batch = observation_batch
 
-        return cls()
+    @classmethod
+    def from_batches(
+        cls,
+        *,
+        forecast_batch: IngestionBatch,
+        observation_batch: IngestionBatch,
+    ) -> "WeatherDomainAdapter":
+        """Return an adapter over observed weather batches."""
+
+        return cls(
+            forecast_batch=forecast_batch,
+            observation_batch=observation_batch,
+        )
 
     def build_bundle(self) -> DomainFeatureBundle:
-        forecast_batch = load_fixture_forecast_batch()
-        observation_batch = load_fixture_observation_batch()
+        forecast_batch = self.forecast_batch
+        observation_batch = self.observation_batch
         features = build_weather_features(forecast_batch, observation_batch)
         dominant_record = forecast_batch.evidence[-1]
         return DomainFeatureBundle(

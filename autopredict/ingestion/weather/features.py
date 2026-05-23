@@ -1,4 +1,4 @@
-"""Feature builders for fixture-backed weather evidence."""
+"""Feature builders for weather evidence."""
 
 from __future__ import annotations
 

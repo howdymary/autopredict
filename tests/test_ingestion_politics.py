@@ -1,4 +1,4 @@
-"""Tests for politics ingestion fixtures and normalization."""
+"""Tests for politics ingestion normalization."""
 
 from __future__ import annotations
 
@@ -9,18 +9,16 @@ from autopredict.ingestion.politics import (
     normalize_events,
     normalize_news,
     normalize_polls,
-    sample_event_rows,
-    sample_news_rows,
-    sample_poll_rows,
 )
+from tests.domain_rows import politics_event_rows, politics_news_rows, politics_poll_rows
 
 
-def test_politics_ingestion_normalizes_fixture_rows() -> None:
-    """Fixture rows should normalize into shared politics batches."""
+def test_politics_ingestion_normalizes_rows() -> None:
+    """Observed rows should normalize into shared politics batches."""
 
-    news_batch = normalize_news(sample_news_rows())
-    poll_batch = normalize_polls(sample_poll_rows())
-    event_batch = normalize_events(sample_event_rows())
+    news_batch = normalize_news(politics_news_rows())
+    poll_batch = normalize_polls(politics_poll_rows())
+    event_batch = normalize_events(politics_event_rows())
 
     assert news_batch.source.domain == "politics"
     assert len(news_batch.records) == 2
@@ -35,12 +33,12 @@ def test_politics_ingestion_normalizes_fixture_rows() -> None:
 
 
 def test_politics_feature_builder_emits_stable_values() -> None:
-    """Feature extraction should be deterministic for fixture-backed politics data."""
+    """Feature extraction should be deterministic for provided politics data."""
 
     features = build_politics_features(
-        normalize_news(sample_news_rows()),
-        normalize_polls(sample_poll_rows()),
-        normalize_events(sample_event_rows()),
+        normalize_news(politics_news_rows()),
+        normalize_polls(politics_poll_rows()),
+        normalize_events(politics_event_rows()),
     )
 
     assert features["num_articles"] == 2

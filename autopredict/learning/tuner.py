@@ -235,60 +235,6 @@ class GridSearchTuner:
             print(f"Results saved to {output_path}")
 
 
-class BayesianTuner:
-    """Placeholder for future Bayesian optimization tuning.
-
-    Uses intelligent search strategies (e.g., Optuna, scikit-optimize) to
-    efficiently explore parameter space without exhaustive grid search.
-
-    This is a stub for future implementation. For now, use GridSearchTuner.
-
-    Example future usage:
-        >>> from optuna import create_study
-        >>> tuner = BayesianTuner(
-        ...     param_space={
-        ...         "min_edge": (0.01, 0.20),  # Continuous range
-        ...         "aggressive_edge": (0.05, 0.30),
-        ...         "max_risk_fraction": (0.005, 0.05),
-        ...     },
-        ...     backtest_fn=run_backtest_with_params,
-        ...     n_trials=100  # Much more efficient than grid search
-        ... )
-        >>> best_params = tuner.tune()
-    """
-
-    def __init__(
-        self,
-        param_space: dict[str, tuple[float, float]],
-        backtest_fn: Callable[[dict[str, Any]], BacktestResult],
-        n_trials: int = 100,
-    ):
-        """Initialize Bayesian tuner (placeholder).
-
-        Args:
-            param_space: Map of param_name -> (min, max) ranges
-            backtest_fn: Function to run backtest and return result
-            n_trials: Number of trials to run
-        """
-        self.param_space = param_space
-        self.backtest_fn = backtest_fn
-        self.n_trials = n_trials
-
-    def tune(self) -> dict[str, Any]:
-        """Run Bayesian optimization (not yet implemented).
-
-        Returns:
-            Best parameters found
-
-        Raises:
-            NotImplementedError: Always (this is a placeholder)
-        """
-        raise NotImplementedError(
-            "BayesianTuner is a placeholder for future implementation. "
-            "Use GridSearchTuner for now, or implement with Optuna/scikit-optimize."
-        )
-
-
 def create_param_grid_from_current(
     current_params: dict[str, float],
     perturbation_factor: float = 0.2,

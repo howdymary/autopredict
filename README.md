@@ -61,6 +61,17 @@ python -m autopredict.cli learn improve \
 
 The archive captures the run artifact, dataset hash, config, final genome, dependency versions, report cards, and warnings. The frontier accepts a run only when its explicit score improves for the same dataset hash, split mode, and strategy kind.
 
+By default the loop routes to the market-implied no-edge model, so it can search risk/execution genes but has no forecast edge to improve. Add `--recalibrate` to let it learn an honest, out-of-sample-validated recalibration of the market's own prices:
+
+```bash
+python -m autopredict.cli learn improve \
+  --dataset /path/to/resolved_markets.json \
+  --recalibrate --warmup-fraction 0.4 \
+  --archive-dir state/meta_harness/archives
+```
+
+The recalibration `fair_prob = sigmoid(scale * logit(market_prob) + shift)` defaults to the identity (no edge), is fit on real resolved outcomes with a prior toward no-edge, and is seeded only on a strictly-past window so promotions stay leakage-free. See [docs/LEARNING.md](docs/LEARNING.md#recalibration-ratchet-learnable-forecast).
+
 ## Data Policy
 
 AutoPredict does not package default market datasets, generated market snapshots, or fabricated domain evidence. Test fixtures live in tests only. Runtime commands either read live venue data or require user-provided real historical/resolved data.

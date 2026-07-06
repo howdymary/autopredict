@@ -6,7 +6,18 @@ import random
 from dataclasses import dataclass, field
 from typing import Any
 
-from autopredict.domains import RoutedSpecialistStrategy, SpecialistOrderPolicy
+from autopredict.domains import (
+    MarketRecalibrationModel,
+    RecalibratedMarketStrategy,
+    RoutedSpecialistStrategy,
+    SpecialistOrderPolicy,
+)
+from autopredict.domains.recalibration import (
+    MAX_SCALE,
+    MAX_SHIFT,
+    MIN_SCALE,
+    MIN_SHIFT,
+)
 from autopredict.prediction_market import (
     AgentRunConfig,
     LegacyMispricedStrategyAdapter,
@@ -36,10 +47,25 @@ class StrategyGenome:
     min_edge_threshold: float = 0.05
     min_confidence: float = 0.70
     max_bankroll_fraction: float = 0.05
+    calibration_logit_scale: float = 1.0
+    calibration_logit_shift: float = 0.0
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def build_strategy(self):
         """Construct the scaffold bridge strategy for this genome."""
+
+        if self.strategy_kind == "market_recalibrated":
+            return RecalibratedMarketStrategy(
+                model=MarketRecalibrationModel(
+                    scale=self.calibration_logit_scale,
+                    shift=self.calibration_logit_shift,
+                ),
+                policy=SpecialistOrderPolicy(
+                    min_abs_edge=self.min_edge_threshold,
+                    max_bankroll_fraction=self.max_bankroll_fraction,
+                    aggressive_edge=self.aggressive_edge_threshold,
+                ),
+            )
 
         if self.strategy_kind == "routed_question_model":
             return RoutedSpecialistStrategy(
@@ -92,6 +118,8 @@ class StrategyGenome:
             "min_edge_threshold": self.min_edge_threshold,
             "min_confidence": self.min_confidence,
             "max_bankroll_fraction": self.max_bankroll_fraction,
+            "calibration_logit_scale": self.calibration_logit_scale,
+            "calibration_logit_shift": self.calibration_logit_shift,
             "metadata": dict(self.metadata),
         }
 
@@ -194,6 +222,16 @@ class StrategyMutator:
                 0.01,
                 0.25,
             ),
+            calibration_logit_scale=_clamp(
+                base.calibration_logit_scale * (1.0 + direction * step * 0.5),
+                MIN_SCALE,
+                MAX_SCALE,
+            ),
+            calibration_logit_shift=_clamp(
+                base.calibration_logit_shift + direction * step,
+                MIN_SHIFT,
+                MAX_SHIFT,
+            ),
             metadata={"parent": base.name, "mutation": label},
         )
 
@@ -206,6 +244,10 @@ class StrategyMutator:
         def perturb(value: float, lower: float, upper: float) -> float:
             factor = 1.0 + rng.uniform(-self.config.relative_step, self.config.relative_step)
             return _clamp(value * factor, lower, upper)
+
+        def perturb_additive(value: float, span: float, lower: float, upper: float) -> float:
+            delta = rng.uniform(-self.config.relative_step, self.config.relative_step) * span
+            return _clamp(value + delta, lower, upper)
 
         return StrategyGenome(
             name=f"{base.name}_mutant_{index:02d}",
@@ -220,5 +262,11 @@ class StrategyMutator:
             min_edge_threshold=perturb(base.min_edge_threshold, 0.01, 0.30),
             min_confidence=perturb(base.min_confidence, 0.50, 0.99),
             max_bankroll_fraction=perturb(base.max_bankroll_fraction, 0.01, 0.25),
+            calibration_logit_scale=perturb(
+                base.calibration_logit_scale, MIN_SCALE, MAX_SCALE
+            ),
+            calibration_logit_shift=perturb_additive(
+                base.calibration_logit_shift, 2.0, MIN_SHIFT, MAX_SHIFT
+            ),
             metadata={"parent": base.name, "mutation": "stochastic", "index": index},
         )

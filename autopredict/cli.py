@@ -17,6 +17,7 @@ from .self_improvement import (
     load_run_archive,
     promote_archive,
     run_forecast_owned_ratchet,
+    run_market_recalibration_ratchet,
     write_run_archive,
 )
 
@@ -247,11 +248,24 @@ def command_learn_improve(args: argparse.Namespace) -> None:
         train_size=args.train_size,
         validation_size=args.validation_size,
     )
-    summary = run_forecast_owned_ratchet(dataset_path, config=config)
+    if getattr(args, "recalibrate", False):
+        summary = run_market_recalibration_ratchet(
+            dataset_path,
+            config=config,
+            warmup_fraction=args.warmup_fraction,
+        )
+    else:
+        summary = run_forecast_owned_ratchet(dataset_path, config=config)
     payload = {
         **summary.to_dict(),
         "num_snapshots": len(snapshots),
     }
+    if getattr(args, "recalibrate", False):
+        fit_sample_size = summary.initial_genome.get("metadata", {}).get(
+            "fit_sample_size", 0
+        )
+        payload["num_warmup_snapshots"] = fit_sample_size
+        payload["num_evaluation_snapshots"] = len(snapshots) - fit_sample_size
 
     archive_path = None
     if args.archive_dir or args.frontier_path:
@@ -358,6 +372,17 @@ def build_parser() -> argparse.ArgumentParser:
     learn_improve.add_argument("--population-size", type=int, default=5, help="Population size per fold")
     learn_improve.add_argument("--train-size", type=int, default=3, help="Train windows or groups per fold")
     learn_improve.add_argument("--validation-size", type=int, default=1, help="Validation windows or groups per fold")
+    learn_improve.add_argument(
+        "--recalibrate",
+        action="store_true",
+        help="Learn a market-recalibration forecast (fit on a past window, validated out-of-sample) instead of the frozen no-edge model",
+    )
+    learn_improve.add_argument(
+        "--warmup-fraction",
+        type=float,
+        default=0.4,
+        help="Fraction of the earliest data used only to fit the recalibration seed (with --recalibrate)",
+    )
     learn_improve.add_argument("--output", help="Optional JSON path for the ratchet summary")
     learn_improve.add_argument("--archive-dir", help="Write an auditable meta-harness archive")
     learn_improve.add_argument("--frontier-path", help="Promote the archive to this frontier JSON")

@@ -34,6 +34,11 @@ from autopredict.domains.modeling import (
     build_domain_report_card,
     load_question_conditioned_dataset,
 )
+from autopredict.domains.recalibration import (
+    MarketRecalibrationModel,
+    RecalibratedMarketStrategy,
+    RecalibrationPrediction,
+)
 from autopredict.domains.politics import (
     PoliticsDomainAdapter,
     PoliticsSpecialistStrategy,
@@ -66,7 +71,10 @@ __all__ = [
     "FinanceSpecialistStrategy",
     "GenericSpecialistStrategy",
     "MarketImpliedNoEdgeModel",
+    "MarketRecalibrationModel",
     "ModelPrediction",
+    "RecalibratedMarketStrategy",
+    "RecalibrationPrediction",
     "QuestionConditionedDataset",
     "PoliticsDomainAdapter",
     "PoliticsSpecialistStrategy",

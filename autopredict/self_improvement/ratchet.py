@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
-from typing import Any
+from typing import Any, Sequence
 
+from autopredict.domains.recalibration import MarketRecalibrationModel
+from autopredict.evaluation.backtest import ResolvedMarketSnapshot
 from autopredict.evaluation.datasets import load_resolved_snapshots
 from autopredict.self_improvement.loop import ImprovementLoopConfig, SelfImprovementLoop
 from autopredict.self_improvement.mutation import MutationConfig, StrategyGenome
@@ -55,15 +57,134 @@ def default_forecast_owned_genome() -> StrategyGenome:
     )
 
 
+def default_recalibrated_genome() -> StrategyGenome:
+    """Return the identity (no-edge) baseline for the recalibration ratchet.
+
+    ``scale = 1.0``/``shift = 0.0`` reproduces the market price exactly, so the
+    baseline fabricates no edge. Fitting on real resolved data is what lets the
+    forecast depart from the market.
+    """
+
+    return StrategyGenome(
+        name="market_recalibrated_baseline",
+        strategy_kind="market_recalibrated",
+        kelly_fraction=0.25,
+        aggressive_edge_threshold=0.08,
+        min_spread_capture=0.0,
+        max_position_size=250.0,
+        max_total_exposure=2000.0,
+        max_daily_loss=500.0,
+        max_leverage=1.5,
+        min_edge_threshold=0.02,
+        min_confidence=0.55,
+        max_bankroll_fraction=0.05,
+        calibration_logit_scale=1.0,
+        calibration_logit_shift=0.0,
+        metadata={"forecast_source": "market_recalibration"},
+    )
+
+
+def fit_recalibrated_genome(
+    snapshots: Sequence[ResolvedMarketSnapshot],
+    *,
+    base_genome: StrategyGenome | None = None,
+    identity_regularization: float = 0.05,
+) -> StrategyGenome:
+    """Fit recalibration genes from resolved snapshots without look-ahead.
+
+    Only the ``(market_prob, outcome)`` pairs of the supplied snapshots feed the
+    fit, so callers must pass a strictly-past window when seeding a walk-forward
+    run. With no snapshots the identity baseline is returned unchanged.
+    """
+
+    genome = base_genome or default_recalibrated_genome()
+    pairs = [
+        (snapshot.market.market_prob, snapshot.outcome) for snapshot in snapshots
+    ]
+    model = MarketRecalibrationModel.fit(
+        pairs, identity_regularization=identity_regularization
+    )
+    return replace(
+        genome,
+        strategy_kind="market_recalibrated",
+        calibration_logit_scale=model.scale,
+        calibration_logit_shift=model.shift,
+        metadata={
+            **genome.metadata,
+            "forecast_source": "market_recalibration",
+            "fit_sample_size": model.fit_sample_size,
+        },
+    )
+
+
+def run_market_recalibration_ratchet(
+    dataset_path: str | Path,
+    *,
+    config: ImprovementLoopConfig | None = None,
+    warmup_fraction: float = 0.4,
+    identity_regularization: float = 0.05,
+    min_warmup_samples: int = 20,
+) -> ForecastRatchetSummary:
+    """Fit a recalibration seed on a past window, then ratchet out-of-sample.
+
+    The earliest ``warmup_fraction`` of the (chronologically ordered) dataset is
+    used only to fit the recalibration seed. The remaining, strictly-later
+    snapshots drive the walk-forward loop, so every promotion is validated on
+    data the seed never saw.
+
+    When the warmup window holds fewer than ``min_warmup_samples`` resolved
+    markets the seed is untrustworthy, so the run falls back to the no-edge
+    identity genome rather than seeding a boundary recalibration from noise.
+    """
+
+    if not (0.0 < warmup_fraction < 1.0):
+        raise ValueError("warmup_fraction must be in (0, 1)")
+
+    snapshots = load_resolved_snapshots(dataset_path)
+    ordered = sorted(snapshots, key=lambda snapshot: snapshot.observed_at)
+    if len(ordered) < 3:
+        raise ValueError(
+            "recalibration ratchet requires at least 3 resolved snapshots"
+        )
+
+    warmup_count = max(1, min(len(ordered) - 2, int(len(ordered) * warmup_fraction)))
+    warmup_snapshots = ordered[:warmup_count]
+    evaluation_snapshots = ordered[warmup_count:]
+
+    if len(warmup_snapshots) < min_warmup_samples:
+        seed_genome = replace(
+            default_recalibrated_genome(),
+            metadata={
+                **default_recalibrated_genome().metadata,
+                "forecast_source": "market_recalibration",
+                "fit_sample_size": 0,
+                "seed_fallback": "insufficient_warmup_samples",
+            },
+        )
+    else:
+        seed_genome = fit_recalibrated_genome(
+            warmup_snapshots,
+            identity_regularization=identity_regularization,
+        )
+    return run_forecast_owned_ratchet(
+        dataset_path,
+        config=config,
+        base_genome=seed_genome,
+        snapshots=evaluation_snapshots,
+    )
+
+
 def run_forecast_owned_ratchet(
     dataset_path: str | Path,
     *,
     config: ImprovementLoopConfig | None = None,
     base_genome: StrategyGenome | None = None,
+    snapshots: Sequence[ResolvedMarketSnapshot] | None = None,
 ) -> ForecastRatchetSummary:
     """Run the package-native walk-forward ratchet on agent-generated forecasts."""
 
-    snapshots = load_resolved_snapshots(dataset_path)
+    if snapshots is None:
+        snapshots = load_resolved_snapshots(dataset_path)
     loop = SelfImprovementLoop(config or ImprovementLoopConfig())
     report = loop.run_walk_forward(base_genome or default_forecast_owned_genome(), snapshots)
 

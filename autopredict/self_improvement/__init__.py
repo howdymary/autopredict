@@ -29,8 +29,11 @@ from autopredict.self_improvement.mutation import (
 from autopredict.self_improvement.ratchet import (
     ForecastRatchetSummary,
     default_forecast_owned_genome,
+    default_recalibrated_genome,
+    fit_recalibrated_genome,
     improvement_config_with_population,
     run_forecast_owned_ratchet,
+    run_market_recalibration_ratchet,
 )
 from autopredict.self_improvement.selection import (
     CandidateEvaluation,
@@ -44,6 +47,9 @@ __all__ = [
     "CandidateEvaluation",
     "dataset_sha256",
     "default_forecast_owned_genome",
+    "default_recalibrated_genome",
+    "fit_recalibrated_genome",
+    "run_market_recalibration_ratchet",
     "ForecastRatchetSummary",
     "FrontierPromotion",
     "FrontierStore",

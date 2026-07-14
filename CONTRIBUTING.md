@@ -80,7 +80,7 @@ autopredict/
 ├── autopredict/          # Package structure
 │   ├── core/             # Core components
 │   ├── prediction_market/ # Scaffold-native agent interfaces
-│   ├── evaluation/        # Proper scoring and scaffold backtests
+│   ├── evaluation/        # Canonical scoring and backtest implementation
 │   ├── self_improvement/  # Mutation and selection loops
 │   ├── strategies/       # Strategy implementations
 │   ├── markets/          # Market adapters
@@ -578,12 +578,12 @@ Add section to `LEARNING.md`
 
 - `README.md`: Project overview
 - `QUICKSTART.md`: Getting started tutorial
-- `ARCHITECTURE.md`: System design
-- `STRATEGIES.md`: Strategy development
-- `BACKTESTING.md`: Backtesting guide
-- `DEPLOYMENT.md`: Production deployment
-- `LEARNING.md`: Self-improvement guide
-- `METRICS.md`: Metric reference
+- `docs/ARCHITECTURE.md`: System design
+- `docs/STRATEGIES.md`: Strategy development
+- `docs/BACKTESTING.md`: Backtesting guide
+- `docs/DEPLOYMENT.md`: Production deployment
+- `docs/LEARNING.md`: Self-improvement guide
+- `docs/METRICS.md`: Metric reference
 - `CONTRIBUTING.md`: This file
 
 ### Writing Good Documentation

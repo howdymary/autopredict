@@ -17,6 +17,12 @@ Use this folder when you want more detail than the top-level README and quicksta
 - [TROUBLESHOOTING.md](TROUBLESHOOTING.md): common setup, data, and execution issues
 - [fair_prob_guidelines.md](fair_prob_guidelines.md): a practical guide for generating better `fair_prob` estimates
 
+## Active product plan
+
+- [Repository consolidation issue audit](specs/2026-07-14-repository-consolidation/issue-audit.md): prioritized product and engineering issues
+- [Repository consolidation task plan](specs/2026-07-14-repository-consolidation/task-plan.md): sequenced implementation packets and verification gates
+- [PRD](specs/2026-07-14-repository-consolidation/prd.md) and [technical PRP](specs/2026-07-14-repository-consolidation/prp.md): product outcomes, boundaries, and implementation design
+
 ## Archive
 
 The working tree now keeps only active docs. Historical reports, phase notes, and prompt assets were

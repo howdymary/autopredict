@@ -30,44 +30,34 @@ Run the local safety audit before wiring live execution:
 python -m autopredict.cli safety-audit --config /path/to/your/live_trading.yaml
 ```
 
-## 3. Run A Backtest
+## 3. Validate Point-In-Time Data
 
-Prepare a resolved-market JSON file from real historical data, then run:
+Prepare a v1 JSON manifest and canonical JSONL records from real historical data,
+then validate their schema, timestamps, book ordering, resolution joins, and hashes:
 
 ```bash
-python -m autopredict.cli backtest --dataset /path/to/resolved_markets.json
+python -m autopredict.cli validate --dataset /path/to/dataset/manifest.json
 ```
 
-The command prints metrics and writes the latest run under `state/backtests/`.
+See [docs/DATASETS.md](docs/DATASETS.md) for the exact contract.
 
-## 4. Inspect The Latest Run
+## 4. Evaluate The Market Baseline
 
 ```bash
-python -m autopredict.cli score-latest
+python -m autopredict.cli evaluate \
+  --dataset /path/to/dataset/manifest.json \
+  --provider market-baseline \
+  --output evaluation-report.json
 ```
 
 Useful first-pass fields:
 
-- `brier_score`: calibration quality for the forecast source being scored
-- `total_pnl`: simulated realized PnL
-- `fill_rate`: how much requested size filled
-- `avg_slippage_bps`: execution cost
-- `agent_feedback`: the framework's diagnosis of the current bottleneck
+- `candidate` and `baseline`: proper scoring and calibration reports
+- `skill`: paired Brier and log-score improvement over the market
+- `rows`: point-in-time forecast rows with independent event IDs
+- `dataset` and `provider`: hashes and versioned provenance
 
-## 5. Improve Offline
-
-Run the forecast-owned ratchet on the same explicit dataset:
-
-```bash
-python -m autopredict.cli learn improve \
-  --dataset /path/to/resolved_markets.json \
-  --archive-dir state/meta_harness/archives \
-  --frontier-path state/meta_harness/frontier.json
-```
-
-The archive records provenance and dataset identity. The frontier only promotes a run when it improves the selected score for the same dataset hash, split mode, and strategy kind.
-
-## 6. Run Tests
+## 5. Run Tests
 
 ```bash
 python -m pip install -e ".[dev]"
@@ -77,6 +67,7 @@ pytest -q
 Next guides:
 
 - [docs/BACKTESTING.md](docs/BACKTESTING.md)
+- [docs/DATASETS.md](docs/DATASETS.md)
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - [docs/LEARNING.md](docs/LEARNING.md)
 - [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md)

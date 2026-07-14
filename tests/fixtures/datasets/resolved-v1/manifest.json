@@ -1,0 +1,15 @@
+{
+  "capture_ended_at": "2026-01-02T12:00:01Z",
+  "capture_started_at": "2026-01-01T11:59:59Z",
+  "completeness": "complete",
+  "dataset_id": "autopredict-test-resolved-v1",
+  "record_count": 4,
+  "records_file": "records.jsonl",
+  "records_sha256": "87b99f4ab80f067f6f6496979f9a4286421f0ce5b402141744b60e61984fd8ca",
+  "schema_version": "autopredict.dataset.v1",
+  "source_endpoints": [
+    "fixture://polymarket-public-data"
+  ],
+  "venue": "polymarket",
+  "warnings": []
+}

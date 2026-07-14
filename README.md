@@ -37,20 +37,32 @@ python -m autopredict.cli safety-audit --config /path/to/your/live_trading.yaml
 
 Market scans report observed Gamma prices plus public CLOB bid/ask/depth when available. Missing order-book data stays `null`/`n/a`; the scanner does not fill gaps with estimates.
 
-## Backtest
+## Validate And Evaluate
 
-Backtests require an explicit resolved-market dataset:
+The supported evaluation path requires a versioned manifest and canonical JSONL
+records from real point-in-time observations:
 
 ```bash
-python -m autopredict.cli backtest --dataset /path/to/resolved_markets.json
-python -m autopredict.cli score-latest
+python -m autopredict.cli validate --dataset /path/to/dataset/manifest.json
+python -m autopredict.cli evaluate \
+  --dataset /path/to/dataset/manifest.json \
+  --provider market-baseline \
+  --output evaluation-report.json
 ```
 
-Each record should represent real historical/resolved market data with the fields consumed by `autopredict.evaluation.load_resolved_snapshots`, such as `market_id`, `market_prob`, `outcome`, and venue/order-book fields. The legacy loop may score a provided `fair_prob` column, but AutoPredict does not ship one.
+Observation and resolution records are separate, so a forecast-safe observation
+cannot expose its eventual outcome. Reports include dataset hashes, package and
+method versions, provider provenance, per-observation evaluation inputs, aggregate
+proper scores, and comparison with the market-implied baseline. See
+[docs/DATASETS.md](docs/DATASETS.md).
+
+`autopredict backtest` remains a deprecated alias for this same baseline evaluator;
+it no longer invokes the incompatible legacy simulator.
 
 ## Improve
 
-Run the forecast-owned ratchet on explicit resolved data:
+The experimental forecast-owned ratchet still consumes the explicitly named legacy
+snapshot adapter while its statistical-promotion packet is being migrated:
 
 ```bash
 python -m autopredict.cli learn improve \
@@ -99,6 +111,7 @@ This matters for production use:
 Start with [QUICKSTART.md](QUICKSTART.md), then use:
 
 - [docs/BACKTESTING.md](docs/BACKTESTING.md)
+- [docs/DATASETS.md](docs/DATASETS.md)
 - [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
 - [docs/LEARNING.md](docs/LEARNING.md)
 - [docs/STRATEGIES.md](docs/STRATEGIES.md)

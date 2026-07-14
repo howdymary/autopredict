@@ -47,12 +47,12 @@ _TIER_TO_SCORE = {
 }
 
 
-def load_resolved_snapshots(
+def load_legacy_resolved_snapshots(
     path: str | Path,
     *,
     venue: VenueConfig | None = None,
 ) -> tuple[ResolvedMarketSnapshot, ...]:
-    """Load a legacy resolved-market dataset into scaffold snapshots."""
+    """Load the explicit pre-v1 compatibility format for legacy experiments."""
 
     dataset_path = Path(path)
     records = json.loads(dataset_path.read_text(encoding="utf-8"))
@@ -73,6 +73,20 @@ def load_resolved_snapshots(
         )
         for record in records
     )
+
+
+def load_resolved_snapshots(
+    path: str | Path,
+    *,
+    venue: VenueConfig | None = None,
+) -> tuple[ResolvedMarketSnapshot, ...]:
+    """Compatibility alias for the explicitly named legacy snapshot loader.
+
+    Public CLI evaluation uses ``load_dataset_v1``. This alias remains only until
+    the self-improvement packet migrates its experimental legacy inputs.
+    """
+
+    return load_legacy_resolved_snapshots(path, venue=venue)
 
 
 def _record_to_snapshot(
@@ -225,7 +239,9 @@ def _parse_optional_timestamp(
     value = _first_present(record, field_names)
     if value is None:
         return None
-    return _parse_timestamp_value(value, market_id=str(record.get("market_id", "")), field_label="expiry")
+    return _parse_timestamp_value(
+        value, market_id=str(record.get("market_id", "")), field_label="expiry"
+    )
 
 
 def _first_present(record: Mapping[str, Any], field_names: Sequence[str]) -> Any | None:

@@ -2,41 +2,41 @@
 
 AutoPredict backtests run only on explicit resolved-market data. The package no longer ships default market snapshots, generated datasets, or hidden fallback examples.
 
-## CLI
+## Canonical CLI
 
 ```bash
-python -m autopredict.cli backtest --dataset /path/to/resolved_markets.json
-python -m autopredict.cli backtest \
-  --config strategy_configs/baseline.json \
-  --dataset /path/to/resolved_markets.json
+python -m autopredict.cli validate --dataset /path/to/dataset/manifest.json
+python -m autopredict.cli evaluate \
+  --dataset /path/to/dataset/manifest.json \
+  --provider market-baseline \
+  --output /path/to/report.json
 ```
 
-`score-latest` reads the newest saved metrics:
+`backtest` is a deprecated alias for the same canonical baseline evaluator. It
+writes the latest deterministic report for compatibility with `score-latest`:
 
 ```bash
+python -m autopredict.cli backtest --dataset /path/to/dataset/manifest.json
 python -m autopredict.cli score-latest
 ```
 
 ## Data Expectations
 
-Use real historical/resolved market snapshots. At minimum, records should include the fields required by the loader you are using, such as:
-
-- `market_id`
-- real observation time such as `observed_at`/`timestamp`
-- `market_prob`
-- `outcome`
-- `time_to_expiry_hours` or equivalent real expiry metadata
-- `next_mid_price` when execution/adverse-selection metrics are evaluated
-- order-book or liquidity fields when execution quality is being evaluated
-
-If you provide `fair_prob`, the legacy loop can score that supplied forecast source. The package does not generate or bundle `fair_prob` values.
+Use the single `autopredict.dataset.v1` contract in [DATASETS.md](DATASETS.md).
+Forecast-safe observations contain point-in-time market probability and book data
+but never outcomes. Resolution records are joined only inside evaluation. Record
+hashes, UTC timestamps, ordered books, unique IDs, and completeness are validated
+before any score is produced.
 
 ## Interpreting Results
 
-- `brier_score` and `log_score` measure forecast quality.
-- `total_pnl`, `win_rate`, and `sharpe` summarize simulated financial outcomes.
-- `fill_rate`, `avg_slippage_bps`, and impact metrics describe execution quality.
-- `agent_feedback` points at the most likely bottleneck.
+- `candidate` and `baseline` contain proper scoring and calibration reports.
+- `skill.brier_skill` is baseline Brier minus candidate Brier; positive is better.
+- `skill.log_skill` is candidate log score minus baseline log score; positive is better.
+- `rows` preserve independent event IDs for later uncertainty and promotion checks.
+
+The v1 evaluator does not claim execution PnL or fills. Those require deterministic
+event replay and shadow execution rather than static-book assumptions.
 
 ## Good Practice
 

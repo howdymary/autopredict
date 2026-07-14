@@ -8,8 +8,24 @@ from autopredict.evaluation.backtest import (
     ResolvedMarketSnapshot,
 )
 from autopredict.evaluation.datasets import (
+    load_legacy_resolved_snapshots,
     load_resolved_snapshots,
     snapshot_questions,
+)
+from autopredict.evaluation.contracts import (
+    DATASET_SCHEMA_VERSION,
+    DatasetManifestV1,
+    DatasetValidationError,
+    MarketObservationV1,
+    ResolvedDatasetV1,
+    ResolvedEvaluationRowV1,
+    ResolutionV1,
+    load_dataset_v1,
+)
+from autopredict.evaluation.reporting import (
+    EVALUATION_REPORT_VERSION,
+    evaluate_market_baseline,
+    report_json,
 )
 from autopredict.evaluation.domain_slices import (
     DomainSliceSummary,
@@ -32,12 +48,24 @@ __all__ = [
     "CalibrationSummary",
     "DomainSliceSummary",
     "ExecutionAssumptions",
+    "DATASET_SCHEMA_VERSION",
+    "DatasetManifestV1",
+    "DatasetValidationError",
+    "EVALUATION_REPORT_VERSION",
+    "MarketObservationV1",
+    "ResolvedDatasetV1",
+    "ResolvedEvaluationRowV1",
+    "ResolutionV1",
+    "evaluate_market_baseline",
+    "load_dataset_v1",
+    "load_legacy_resolved_snapshots",
     "load_resolved_snapshots",
     "PredictionMarketBacktester",
     "ProperScoringRules",
     "ResolvedMarketSnapshot",
     "ScoringReport",
     "snapshot_questions",
+    "report_json",
     "summarize_backtest_slices",
     "summarize_domain_slices",
 ]

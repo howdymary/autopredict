@@ -1,0 +1,21 @@
+{
+  "capture_ended_at": "2026-02-02T00:00:02Z",
+  "capture_id": "capture-7cbf38e405edcd5b617328e423783dfcb575327135b958b93c9751ccf9df725b",
+  "capture_started_at": "2026-01-01T00:01:00Z",
+  "completeness": "complete",
+  "record_count": 6,
+  "records_file": "capture.jsonl",
+  "records_sha256": "7cbf38e405edcd5b617328e423783dfcb575327135b958b93c9751ccf9df725b",
+  "schema_version": "autopredict.capture.v1",
+  "sequence_completeness": "validated",
+  "source_ended_at": null,
+  "source_endpoints": [
+    "https://public.example/clob-book",
+    "https://public.example/clob-trades",
+    "https://public.example/gamma",
+    "https://public.example/gamma-resolution"
+  ],
+  "source_started_at": null,
+  "venue": "polymarket",
+  "warnings": []
+}

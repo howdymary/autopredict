@@ -16,6 +16,7 @@ from .evaluation import (
     report_json,
 )
 from .forecasting import MarketBaselineProvider, RecalibrationProvider
+from .config import load_shadow_config
 from .learning.analyzer import PerformanceAnalyzer
 from .learning.logger import TradeLogger
 from .live.safety_audit import run_safety_audit
@@ -192,6 +193,40 @@ def command_trade_live(args: argparse.Namespace) -> None:
         "trade-live is disabled in AutoPredict pending shadow-trading and safety gates. "
         "Use scan-live for read-only public Polymarket data."
     )
+
+
+def command_shadow_run(args: argparse.Namespace) -> None:
+    from .live.shadow.runner import run_shadow
+
+    print(
+        json.dumps(
+            run_shadow(load_shadow_config(_resolve_cli_path(args.config))), indent=2, sort_keys=True
+        )
+    )
+
+
+def command_shadow_status(args: argparse.Namespace) -> None:
+    from .live.shadow.runner import inspect_shadow_state
+
+    print(
+        json.dumps(
+            inspect_shadow_state(str(_resolve_cli_path(args.state))), indent=2, sort_keys=True
+        )
+    )
+
+
+def command_shadow_cancel_all(args: argparse.Namespace) -> None:
+    from .live.shadow.runner import cancel_shadow_state
+
+    count = cancel_shadow_state(str(_resolve_cli_path(args.state)), args.reason)
+    print(json.dumps({"canceled_orders": count, "breaker": "manual"}, sort_keys=True))
+
+
+def command_shadow_reset(args: argparse.Namespace) -> None:
+    from .live.shadow.runner import reset_shadow_state
+
+    reset_shadow_state(str(_resolve_cli_path(args.state)), args.reason, args.freshness_seconds)
+    print(json.dumps({"breaker_reset": True}, sort_keys=True))
 
 
 def command_scan_live(args: argparse.Namespace) -> None:
@@ -452,6 +487,28 @@ def build_parser() -> argparse.ArgumentParser:
     trade_live = subparsers.add_parser("trade-live", help="Disabled live order entrypoint")
     trade_live.add_argument("--config", help="Reserved for future live execution config")
     trade_live.set_defaults(func=command_trade_live)
+
+    shadow = subparsers.add_parser("shadow", help="Durable credential-free shadow execution")
+    shadow_subparsers = shadow.add_subparsers(dest="shadow_command", required=True)
+    shadow_run = shadow_subparsers.add_parser("run", help="Replay a public capture")
+    shadow_run.add_argument("--config", required=True, help="Shadow YAML configuration")
+    shadow_run.set_defaults(func=command_shadow_run)
+    shadow_status = shadow_subparsers.add_parser("status", help="Inspect durable state")
+    shadow_status.add_argument("--state", required=True, help="SQLite shadow state path")
+    shadow_status.set_defaults(func=command_shadow_status)
+    shadow_cancel = shadow_subparsers.add_parser(
+        "cancel-all", help="Idempotently cancel all simulated orders and latch a breaker"
+    )
+    shadow_cancel.add_argument("--state", required=True)
+    shadow_cancel.add_argument("--reason", required=True)
+    shadow_cancel.set_defaults(func=command_shadow_cancel_all)
+    shadow_reset = shadow_subparsers.add_parser(
+        "reset", help="Explicitly reset a reconciled breaker with fresh feeds"
+    )
+    shadow_reset.add_argument("--state", required=True)
+    shadow_reset.add_argument("--reason", required=True)
+    shadow_reset.add_argument("--freshness-seconds", type=int, default=30)
+    shadow_reset.set_defaults(func=command_shadow_reset)
 
     learn = subparsers.add_parser("learn", help="Self-improvement and learning tools")
     learn_subparsers = learn.add_subparsers(dest="learn_command", required=True)

@@ -1,0 +1,16 @@
+schema_version: autopredict.shadow.config.v1
+mode: shadow
+state_path: ../state/shadow/autopredict.db
+capture_manifest: ../tests/fixtures/recording/polymarket-v1/manifest.json
+provider: market-baseline
+stale_after_seconds: 30
+
+strategy:
+  min_edge: 0.05
+  order_quantity: 1.0
+
+risk:
+  max_position: 100.0
+  max_total_exposure: 500.0
+  max_daily_loss: 50.0
+  max_open_markets: 20

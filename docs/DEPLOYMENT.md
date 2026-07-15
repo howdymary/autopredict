@@ -30,8 +30,8 @@ AutoPredict currently exposes one executable deployment mode:
 ### Quick Start
 
 ```bash
-# Paper trading (safe, from an installed package)
-autopredict-paper --config /path/to/paper_trading.yaml
+# Shadow execution (safe, from an installed package)
+autopredict shadow run --config /path/to/shadow.yaml
 
 # Live execution intentionally fails closed
 autopredict trade-live
@@ -39,7 +39,7 @@ autopredict trade-live
 
 ## Paper Trading
 
-Paper trading simulates order execution without risking real capital. Use this to:
+Shadow execution processes validated public captures without risking real capital. Use this to:
 
 - Develop and test trading strategies
 - Validate configuration settings
@@ -50,45 +50,40 @@ Paper trading simulates order execution without risking real capital. Use this t
 
 1. **Use the provided configuration:**
    ```bash
-   # configs/paper_trading.yaml is ready to use
-   autopredict-paper --config configs/paper_trading.yaml
+   cp configs/shadow_replay.yaml.example configs/my_shadow.yaml
+   autopredict-paper --config configs/my_shadow.yaml
    ```
 
 2. **Or create your own:**
    ```bash
-   cp configs/paper_trading.yaml configs/my_paper_config.yaml
-   # Edit my_paper_config.yaml
-   autopredict-paper --config configs/my_paper_config.yaml
+   cp configs/shadow_replay.yaml.example configs/my_shadow.yaml
+   # Edit my_shadow.yaml
+   autopredict shadow run --config configs/my_shadow.yaml
    ```
 
 ### Running Paper Trading
 
 ```bash
-# Run indefinitely
-autopredict-paper --config configs/paper_trading.yaml
-
-# Run for 1 hour (3600 seconds)
-autopredict-paper --config configs/paper_trading.yaml --duration 3600
-
-# Enable verbose logging
-autopredict-paper --config configs/paper_trading.yaml --verbose
+# Run a deterministic capture through durable shadow state
+autopredict shadow run --config configs/my_shadow.yaml
 ```
 
 ### What Gets Simulated
 
-- Order execution with realistic slippage
-- Commission charges
-- Position tracking
-- P&L calculation
-- Risk limit enforcement
-- All logging functionality
+- Displayed-depth and later-public-trade fills with no randomness
+- Signed position, realized P&L, fee, and mark accounting
+- Reservation-aware worst-case risk limits
+- Durable decisions, intents, fills, cursors, and breaker state
+- Restart reconciliation and deterministic state hashes
 
 ### What's Different from Live
 
-- No real API calls to venues
-- Simplified order book simulation
-- Probabilistic limit order fills
+- No credential, balance, position, cancel, or submission capability
+- No probabilistic or fabricated fills
 - No actual capital at risk
+
+See [Shadow Execution](SHADOW_EXECUTION.md) for contracts, breaker semantics, and
+operator commands.
 
 ## Live Trading
 
@@ -347,7 +342,7 @@ logging:
 **1. Live execution is disabled**
 
 This is the expected fail-closed behavior. Use `autopredict scan-live` or
-`autopredict-paper`; configuration and credentials cannot override the gate.
+`autopredict shadow run`; configuration and credentials cannot override the gate.
 
 **2. Kill switch activated unexpectedly**
 
@@ -365,7 +360,7 @@ risk_manager.reset_kill_switch("RESET KILL SWITCH")
 Enable verbose logging:
 
 ```bash
-autopredict-paper --config configs/paper_trading.yaml --verbose
+autopredict shadow status --state state/shadow/autopredict.db
 ```
 
 Or in configuration:
@@ -515,7 +510,7 @@ For issues not covered here:
 
 ### Complete Configuration Example
 
-See `configs/paper_trading.yaml` for the supported annotated example. The live
+See `configs/shadow_replay.yaml.example` for the supported annotated example. The live
 example is retained only for offline safety-audit tests.
 
 ### Risk Configuration Defaults

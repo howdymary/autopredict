@@ -698,7 +698,7 @@ For issues not covered here:
 1. Check logs for detailed error messages
 2. Review configuration validation warnings
 3. Test in paper mode to isolate issue
-4. Consult the main README.md and ARCHITECTURE.md
+4. Consult the main `README.md` and `docs/ARCHITECTURE.md`
 
 ---
 

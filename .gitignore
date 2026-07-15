@@ -19,6 +19,7 @@ configs/live_trading.yaml
 logs/
 *.jsonl
 !experiments/log.jsonl
+!tests/fixtures/**/*.jsonl
 
 # Environment files
 .env

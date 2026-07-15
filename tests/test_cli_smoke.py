@@ -121,7 +121,7 @@ def test_module_backtest_outputs_metrics_json(tmp_path: Path) -> None:
     completed = _run_cli("backtest", "--dataset", str(CANONICAL_MANIFEST))
     metrics = json.loads(completed.stdout)
 
-    assert metrics["report_version"] == "autopredict.evaluation.v1"
+    assert metrics["report_version"] == "autopredict.evaluation.v2"
     assert metrics["provider"]["name"] == "market-baseline"
     assert metrics["skill"] == {"brier_skill": 0.0, "log_skill": 0.0}
 
@@ -131,7 +131,7 @@ def test_module_score_latest_reads_saved_metrics(tmp_path: Path) -> None:
     completed = _run_cli("score-latest")
     metrics = json.loads(completed.stdout)
 
-    assert metrics["report_version"] == "autopredict.evaluation.v1"
+    assert metrics["report_version"] == "autopredict.evaluation.v2"
     assert metrics["valid"] is True
 
 

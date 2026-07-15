@@ -6,11 +6,17 @@ from datetime import datetime, timedelta
 
 import pytest
 
-from autopredict.core.types import MarketCategory, MarketState, Order, OrderSide, OrderType, Portfolio
+from autopredict.core.types import (
+    MarketCategory,
+    MarketState,
+    Order,
+    OrderSide,
+    OrderType,
+    Portfolio,
+)
 from autopredict.prediction_market import (
     AgentRunConfig,
     DecisionStatus,
-    LegacyMispricedStrategyAdapter,
     MarketSignal,
     MarketSnapshot,
     PredictionMarketAgent,
@@ -19,6 +25,7 @@ from autopredict.prediction_market import (
     VenueConfig,
     VenueName,
 )
+from autopredict.prediction_market.legacy import LegacyMispricedStrategyAdapter
 
 
 class StaticStrategy:

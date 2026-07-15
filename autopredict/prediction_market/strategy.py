@@ -33,7 +33,7 @@ class PredictionMarketStrategy(Protocol):
 
 
 class DirectProbabilityStrategy:
-    """Minimal built-in strategy that reads fair value from snapshot features."""
+    """Compatibility no-edge strategy using the observed market probability."""
 
     name = "direct_probability"
 
@@ -43,13 +43,11 @@ class DirectProbabilityStrategy:
         context: StrategyContext,
     ) -> MarketSignal | None:
         del context
-        fair_prob = snapshot.features.get("fair_prob", snapshot.market.market_prob)
-        confidence = snapshot.features.get("confidence", 1.0)
         return MarketSignal(
-            fair_prob=float(fair_prob),
-            confidence=float(confidence),
-            rationale="Direct fair-probability signal from snapshot features",
-            tags=("baseline", "direct"),
+            fair_prob=snapshot.market.market_prob,
+            confidence=1.0,
+            rationale="Point-in-time market baseline; no model edge claimed",
+            tags=("baseline", "market_implied"),
         )
 
     def build_orders(

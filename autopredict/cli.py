@@ -10,11 +10,12 @@ import sys
 
 from .evaluation import (
     DatasetValidationError,
-    evaluate_market_baseline,
+    evaluate_provider,
     load_dataset_v1,
     load_legacy_resolved_snapshots,
     report_json,
 )
+from .forecasting import MarketBaselineProvider, RecalibrationProvider
 from .learning.analyzer import PerformanceAnalyzer
 from .learning.logger import TradeLogger
 from .live.safety_audit import run_safety_audit
@@ -95,7 +96,7 @@ def command_backtest(args: argparse.Namespace) -> None:
             "AutoPredict does not ship synthetic default market datasets."
         )
     print("backtest is deprecated; using canonical market-baseline evaluation", file=sys.stderr)
-    rendered = _evaluate_manifest(args.dataset, provider="market-baseline")
+    rendered = _evaluate_manifest(args.dataset, provider_name="market-baseline")
     defaults = _load_defaults()
     state_dir = _resolve_default(defaults["state_dir"], runtime_output=True)
     output_root = state_dir / datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S-%f")
@@ -115,12 +116,28 @@ def _load_manifest(path_like: str | Path):
         raise SystemExit(f"dataset validation failed: {exc}") from exc
 
 
-def _evaluate_manifest(path_like: str | Path, *, provider: str) -> str:
-    if provider != "market-baseline":
-        raise SystemExit(f"unsupported forecast provider: {provider}")
+def _evaluate_manifest(
+    path_like: str | Path,
+    *,
+    provider_name: str,
+    recalibration_scale: float = 1.0,
+    recalibration_shift: float = 0.0,
+) -> str:
+    if provider_name == "market-baseline":
+        provider = MarketBaselineProvider()
+    elif provider_name == "market-recalibration":
+        try:
+            provider = RecalibrationProvider(
+                scale=recalibration_scale,
+                shift=recalibration_shift,
+            )
+        except ValueError as exc:
+            raise SystemExit(f"invalid provider configuration: {exc}") from exc
+    else:
+        raise SystemExit(f"unsupported forecast provider: {provider_name}")
     dataset = _load_manifest(path_like)
     try:
-        report = evaluate_market_baseline(dataset)
+        report = evaluate_provider(dataset, provider)
     except ValueError as exc:
         raise SystemExit(f"evaluation failed: {exc}") from exc
     return report_json(report)
@@ -148,7 +165,12 @@ def command_validate(args: argparse.Namespace) -> None:
 def command_evaluate(args: argparse.Namespace) -> None:
     """Evaluate a canonical dataset with an explicit forecast provider."""
 
-    rendered = _evaluate_manifest(args.dataset, provider=args.provider)
+    rendered = _evaluate_manifest(
+        args.dataset,
+        provider_name=args.provider,
+        recalibration_scale=args.recalibration_scale,
+        recalibration_shift=args.recalibration_shift,
+    )
     if args.output:
         output_path = _resolve_cli_path(args.output)
         output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -391,9 +413,11 @@ def build_parser() -> argparse.ArgumentParser:
     evaluate.add_argument("--dataset", required=True, help="Path to dataset manifest JSON")
     evaluate.add_argument(
         "--provider",
-        choices=("market-baseline",),
+        choices=("market-baseline", "market-recalibration"),
         default="market-baseline",
     )
+    evaluate.add_argument("--recalibration-scale", type=float, default=1.0)
+    evaluate.add_argument("--recalibration-shift", type=float, default=0.0)
     evaluate.add_argument("--output", help="Optional deterministic report JSON path")
     evaluate.set_defaults(func=command_evaluate)
 

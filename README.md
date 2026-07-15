@@ -59,6 +59,12 @@ proper scores, and comparison with the market-implied baseline. See
 `autopredict backtest` remains a deprecated alias for this same baseline evaluator;
 it no longer invokes the incompatible legacy simulator.
 
+Typed providers keep outcomes out of forecast requests and attach an exact UTC
+as-of time plus versioned configuration provenance. The CLI also supports the
+explicit `market-recalibration` provider; user callables use the Python adapter
+and are not dynamically loaded by command-line input. See
+[docs/FORECAST_PROVIDERS.md](docs/FORECAST_PROVIDERS.md).
+
 ## Improve
 
 The experimental forecast-owned ratchet still consumes the explicitly named legacy

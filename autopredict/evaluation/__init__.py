@@ -25,6 +25,7 @@ from autopredict.evaluation.contracts import (
 from autopredict.evaluation.reporting import (
     EVALUATION_REPORT_VERSION,
     evaluate_market_baseline,
+    evaluate_provider,
     report_json,
 )
 from autopredict.evaluation.domain_slices import (
@@ -57,6 +58,7 @@ __all__ = [
     "ResolvedEvaluationRowV1",
     "ResolutionV1",
     "evaluate_market_baseline",
+    "evaluate_provider",
     "load_dataset_v1",
     "load_legacy_resolved_snapshots",
     "load_resolved_snapshots",

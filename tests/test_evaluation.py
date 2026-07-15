@@ -23,12 +23,12 @@ from autopredict.evaluation import (
 )
 from autopredict.prediction_market import (
     AgentRunConfig,
-    LegacyMispricedStrategyAdapter,
     MarketSignal,
     PredictionMarketAgent,
     VenueConfig,
     VenueName,
 )
+from autopredict.prediction_market.legacy import LegacyMispricedStrategyAdapter
 
 
 class StaticStrategy:
@@ -219,9 +219,7 @@ def test_backtester_scores_legacy_adapter_end_to_end(market: MarketState, venue:
                 market=market,
                 venue=venue,
                 outcome=1,
-                context_metadata={
-                    "probability_model": MockProbabilityModel(0.72, 0.9)
-                },
+                context_metadata={"probability_model": MockProbabilityModel(0.72, 0.9)},
             )
         ],
     )

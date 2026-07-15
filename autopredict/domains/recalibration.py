@@ -82,13 +82,9 @@ class MarketRecalibrationModel:
 
     def __post_init__(self) -> None:
         if not (MIN_SCALE <= self.scale <= MAX_SCALE):
-            raise ValueError(
-                f"scale must be in [{MIN_SCALE}, {MAX_SCALE}], got {self.scale}"
-            )
+            raise ValueError(f"scale must be in [{MIN_SCALE}, {MAX_SCALE}], got {self.scale}")
         if not (MIN_SHIFT <= self.shift <= MAX_SHIFT):
-            raise ValueError(
-                f"shift must be in [{MIN_SHIFT}, {MAX_SHIFT}], got {self.shift}"
-            )
+            raise ValueError(f"shift must be in [{MIN_SHIFT}, {MAX_SHIFT}], got {self.shift}")
 
     @property
     def is_identity(self) -> bool:
@@ -99,6 +95,8 @@ class MarketRecalibrationModel:
     def fair_probability(self, market_prob: float) -> float:
         """Return the recalibrated fair probability for a market price."""
 
+        if self.is_identity:
+            return _clamp(market_prob, 0.0, 1.0)
         return sigmoid(self.scale * logit(market_prob) + self.shift)
 
     def edge_against(self, market_prob: float) -> float:
@@ -144,9 +142,7 @@ class MarketRecalibrationModel:
             raise ValueError("min_samples must be non-negative")
 
         cleaned = [
-            (float(prob), float(outcome))
-            for prob, outcome in pairs
-            if outcome in (0, 1, 0.0, 1.0)
+            (float(prob), float(outcome)) for prob, outcome in pairs if outcome in (0, 1, 0.0, 1.0)
         ]
         if len(cleaned) < max(min_samples, 1):
             return cls.identity()
@@ -165,9 +161,7 @@ class MarketRecalibrationModel:
                 prediction = sigmoid(shift + scale * x)
                 error = prediction - y
                 shift -= learning_rate * (error + regularization * shift)
-                scale -= learning_rate * (
-                    error * x + regularization * (scale - 1.0)
-                )
+                scale -= learning_rate * (error * x + regularization * (scale - 1.0))
                 # Project back onto the monotonic, bounded region every step so
                 # a single extreme quote can never invert the recalibration.
                 scale = _clamp(scale, MIN_SCALE, MAX_SCALE)
@@ -254,9 +248,7 @@ class RecalibratedMarketStrategy:
             },
             snapshot.labels,
         )
-        family = snapshot_label(
-            snapshot, "market_family", snapshot.market.category.value
-        )
+        family = snapshot_label(snapshot, "market_family", snapshot.market.category.value)
         regime = snapshot_label(snapshot, "regime", "steady")
         rationale = (
             "Market-implied price recalibrated on real resolved outcomes "

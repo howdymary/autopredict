@@ -20,11 +20,8 @@ from autopredict.domains.recalibration import (
 )
 from autopredict.prediction_market import (
     AgentRunConfig,
-    LegacyMispricedStrategyAdapter,
     PredictionMarketAgent,
 )
-from autopredict.strategies.base import RiskLimits
-from autopredict.strategies.mispriced_probability import MispricedProbabilityStrategy
 
 
 def _clamp(value: float, lower: float, upper: float) -> float:
@@ -36,7 +33,7 @@ class StrategyGenome:
     """Serializable parameter set for one strategy variant."""
 
     name: str
-    strategy_kind: str = "legacy_mispriced"
+    strategy_kind: str = "market_recalibrated"
     kelly_fraction: float = 0.25
     aggressive_edge_threshold: float = 0.15
     min_spread_capture: float = 10.0
@@ -76,20 +73,14 @@ class StrategyGenome:
                 )
             )
 
-        strategy = MispricedProbabilityStrategy(
-            risk_limits=RiskLimits(
-                max_position_size=self.max_position_size,
-                max_total_exposure=self.max_total_exposure,
-                max_daily_loss=self.max_daily_loss,
-                max_leverage=self.max_leverage,
-                min_edge_threshold=self.min_edge_threshold,
-                min_confidence=self.min_confidence,
-            ),
-            kelly_fraction=self.kelly_fraction,
-            aggressive_edge_threshold=self.aggressive_edge_threshold,
-            min_spread_capture=self.min_spread_capture,
+        if self.strategy_kind == "legacy_mispriced":
+            raise ValueError(
+                "legacy_mispriced is archived compatibility only; migrate to "
+                "market_recalibrated or routed_question_model"
+            )
+        raise ValueError(
+            f"unsupported strategy_kind {self.strategy_kind!r}; use a typed forecast strategy"
         )
-        return LegacyMispricedStrategyAdapter(strategy=strategy)
 
     def build_agent(
         self,
@@ -262,9 +253,7 @@ class StrategyMutator:
             min_edge_threshold=perturb(base.min_edge_threshold, 0.01, 0.30),
             min_confidence=perturb(base.min_confidence, 0.50, 0.99),
             max_bankroll_fraction=perturb(base.max_bankroll_fraction, 0.01, 0.25),
-            calibration_logit_scale=perturb(
-                base.calibration_logit_scale, MIN_SCALE, MAX_SCALE
-            ),
+            calibration_logit_scale=perturb(base.calibration_logit_scale, MIN_SCALE, MAX_SCALE),
             calibration_logit_shift=perturb_additive(
                 base.calibration_logit_shift, 2.0, MIN_SHIFT, MAX_SHIFT
             ),

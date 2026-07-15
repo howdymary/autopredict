@@ -44,7 +44,7 @@ def _load_module(module_name: str):
 
 @pytest.fixture
 def baseline_genome() -> StrategyGenome:
-    """Return the baseline mispriced-probability genome used by the scaffold."""
+    """Return the maintained typed no-edge genome used by the scaffold."""
 
     return StrategyGenome(name="baseline")
 
@@ -186,7 +186,10 @@ def test_self_improvement_modules_export_expected_contract() -> None:
 
     for module, names in (
         (mutation, ("StrategyGenome", "MutationConfig", "StrategyMutator")),
-        (selection, ("CandidateEvaluation", "SelectionConfig", "SelectionOutcome", "StrategySelector")),
+        (
+            selection,
+            ("CandidateEvaluation", "SelectionConfig", "SelectionOutcome", "StrategySelector"),
+        ),
         (
             loop,
             (
@@ -240,15 +243,12 @@ def test_strategy_mutator_is_seeded_and_clamps_variants(baseline_genome: Strateg
     assert 0.0 <= stochastic.min_spread_capture <= 100.0
     assert 0.50 <= stochastic.min_confidence <= 0.99
 
-    built_strategy = baseline_genome.build_strategy()._strategy
-    assert built_strategy.kelly_fraction == pytest.approx(baseline_genome.kelly_fraction)
-    assert built_strategy.aggressive_edge_threshold == pytest.approx(
-        baseline_genome.aggressive_edge_threshold
-    )
-    assert built_strategy.min_spread_capture == pytest.approx(baseline_genome.min_spread_capture)
-    assert built_strategy.risk_limits.min_edge_threshold == pytest.approx(
-        baseline_genome.min_edge_threshold
-    )
+    built_strategy = baseline_genome.build_strategy()
+    assert built_strategy.model.is_identity
+    assert built_strategy.policy.min_abs_edge == pytest.approx(baseline_genome.min_edge_threshold)
+
+    with pytest.raises(ValueError, match="archived compatibility"):
+        StrategyGenome(name="legacy", strategy_kind="legacy_mispriced").build_strategy()
 
 
 def test_selection_policy_prefers_guardrailed_candidate_over_raw_score_outlier(
@@ -330,8 +330,8 @@ def test_self_improvement_loop_evaluates_population_and_picks_winner(
 
     def fake_run(agent, snapshots, starting_cash=1000.0):
         del snapshots, starting_cash
-        strategy = agent.strategy._strategy
-        if strategy.kelly_fraction == pytest.approx(0.3125):
+        strategy = agent.strategy
+        if strategy.model.scale == pytest.approx(1.125):
             return _make_result(
                 log_score=0.36,
                 brier_score=0.10,
@@ -339,7 +339,7 @@ def test_self_improvement_loop_evaluates_population_and_picks_winner(
                 total_pnl=6.0,
                 slippage_bps=1.0,
             )
-        if strategy.kelly_fraction == pytest.approx(0.1875):
+        if strategy.model.scale == pytest.approx(0.875):
             return _make_result(
                 log_score=0.32,
                 brier_score=0.14,
@@ -347,7 +347,7 @@ def test_self_improvement_loop_evaluates_population_and_picks_winner(
                 total_pnl=4.0,
                 slippage_bps=2.0,
             )
-        if strategy.kelly_fraction != pytest.approx(0.25):
+        if strategy.model.scale != pytest.approx(1.0):
             return _make_result(
                 log_score=0.24,
                 brier_score=0.18,
@@ -498,11 +498,11 @@ def test_walk_forward_promotes_candidate_only_after_validation(
 
     def fake_run(agent, fold_snapshots, starting_cash=1000.0):
         del starting_cash
-        strategy = agent.strategy._strategy
+        strategy = agent.strategy
         market_ids = tuple(snapshot.market.market_id for snapshot in fold_snapshots)
 
         if market_ids == ("loop-market-0", "loop-market-1"):
-            if abs(strategy.kelly_fraction - 0.3125) <= 1e-9:
+            if abs(strategy.model.scale - 1.125) <= 1e-9:
                 return _make_result(
                     log_score=0.36,
                     brier_score=0.10,
@@ -510,7 +510,7 @@ def test_walk_forward_promotes_candidate_only_after_validation(
                     total_pnl=6.0,
                     slippage_bps=1.0,
                 )
-            if abs(strategy.kelly_fraction - 0.1875) <= 1e-9:
+            if abs(strategy.model.scale - 0.875) <= 1e-9:
                 return _make_result(
                     log_score=0.32,
                     brier_score=0.14,
@@ -527,7 +527,7 @@ def test_walk_forward_promotes_candidate_only_after_validation(
             )
 
         if market_ids == ("loop-market-2",):
-            if abs(strategy.kelly_fraction - 0.1875) <= 1e-9:
+            if abs(strategy.model.scale - 0.875) <= 1e-9:
                 return _make_result(
                     log_score=0.28,
                     brier_score=0.15,
@@ -586,11 +586,11 @@ def test_walk_forward_rejects_candidate_that_fails_validation_guardrails(
 
     def fake_run(agent, fold_snapshots, starting_cash=1000.0):
         del starting_cash
-        strategy = agent.strategy._strategy
+        strategy = agent.strategy
         market_ids = tuple(snapshot.market.market_id for snapshot in fold_snapshots)
 
         if market_ids == ("loop-market-0", "loop-market-1"):
-            if abs(strategy.kelly_fraction - 0.1875) <= 1e-9:
+            if abs(strategy.model.scale - 0.875) <= 1e-9:
                 return _make_result(
                     log_score=0.32,
                     brier_score=0.14,
@@ -607,7 +607,7 @@ def test_walk_forward_rejects_candidate_that_fails_validation_guardrails(
             )
 
         if market_ids == ("loop-market-2",):
-            if abs(strategy.kelly_fraction - 0.1875) <= 1e-9:
+            if abs(strategy.model.scale - 0.875) <= 1e-9:
                 return _make_result(
                     log_score=0.30,
                     brier_score=0.13,
@@ -674,11 +674,11 @@ def test_regime_walk_forward_uses_regime_blocks_for_holdouts(
 
     def fake_run(agent, fold_snapshots, starting_cash=1000.0):
         del starting_cash
-        strategy = agent.strategy._strategy
+        strategy = agent.strategy
         market_ids = tuple(snapshot.market.market_id for snapshot in fold_snapshots)
 
         if market_ids == ("loop-market-0", "loop-market-1"):
-            if abs(strategy.kelly_fraction - 0.1875) <= 1e-9:
+            if abs(strategy.model.scale - 0.875) <= 1e-9:
                 return _make_result(
                     log_score=0.31,
                     brier_score=0.14,
@@ -695,7 +695,7 @@ def test_regime_walk_forward_uses_regime_blocks_for_holdouts(
             )
 
         if market_ids == ("loop-market-2", "loop-market-3"):
-            if abs(strategy.kelly_fraction - 0.1875) <= 1e-9:
+            if abs(strategy.model.scale - 0.875) <= 1e-9:
                 return _make_result(
                     log_score=0.29,
                     brier_score=0.13,
@@ -761,11 +761,11 @@ def test_market_family_holdouts_keep_validation_isolated_by_category(
 
     def fake_run(agent, fold_snapshots, starting_cash=1000.0):
         del starting_cash
-        strategy = agent.strategy._strategy
+        strategy = agent.strategy
         categories = {snapshot.market.category.value for snapshot in fold_snapshots}
 
         if len(categories) > 1:
-            if abs(strategy.kelly_fraction - 0.1875) <= 1e-9:
+            if abs(strategy.model.scale - 0.875) <= 1e-9:
                 return _make_result(
                     log_score=0.31,
                     brier_score=0.14,
@@ -782,7 +782,7 @@ def test_market_family_holdouts_keep_validation_isolated_by_category(
             )
 
         if categories == {"politics"} or categories == {"crypto"} or categories == {"science"}:
-            if abs(strategy.kelly_fraction - 0.1875) <= 1e-9:
+            if abs(strategy.model.scale - 0.875) <= 1e-9:
                 return _make_result(
                     log_score=0.18,
                     brier_score=0.22,

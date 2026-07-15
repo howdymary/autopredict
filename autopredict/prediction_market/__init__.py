@@ -10,10 +10,7 @@ from autopredict.prediction_market.agent import (
     PredictionMarketAgent,
     ProposedOrder,
 )
-from autopredict.prediction_market.builtin import (
-    LegacyMispricedStrategyAdapter,
-    create_default_registry,
-)
+from autopredict.prediction_market.builtin import create_default_registry
 from autopredict.prediction_market.registry import (
     StrategyRegistration,
     StrategyRegistry,
@@ -45,7 +42,6 @@ __all__ = [
     "DirectProbabilityStrategy",
     "ExecutionStrategy",
     "LegacyMarketState",
-    "LegacyMispricedStrategyAdapter",
     "MarketState",
     "MarketSignal",
     "MarketSnapshot",

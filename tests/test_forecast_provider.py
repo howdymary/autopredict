@@ -26,7 +26,6 @@ from autopredict.forecasting import (
     invoke_provider,
 )
 
-
 ROOT = Path(__file__).resolve().parent.parent
 MANIFEST = ROOT / "tests/fixtures/datasets/resolved-v1/manifest.json"
 

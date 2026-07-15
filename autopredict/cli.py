@@ -6,12 +6,18 @@ import argparse
 from datetime import datetime, timezone
 import json
 from pathlib import Path
+import sys
 
-from .evaluation import load_resolved_snapshots
+from .evaluation import (
+    DatasetValidationError,
+    evaluate_market_baseline,
+    load_dataset_v1,
+    load_legacy_resolved_snapshots,
+    report_json,
+)
 from .learning.analyzer import PerformanceAnalyzer
 from .learning.logger import TradeLogger
 from .live.safety_audit import run_safety_audit
-from .run_experiment import run_backtest
 from .self_improvement import (
     improvement_config_with_population,
     load_run_archive,
@@ -20,7 +26,6 @@ from .self_improvement import (
     run_market_recalibration_ratchet,
     write_run_archive,
 )
-
 
 PACKAGE_ROOT = Path(__file__).resolve().parent
 REPO_ROOT = PACKAGE_ROOT.parent
@@ -77,32 +82,78 @@ def _latest_metrics_file(state_dir: Path) -> Path | None:
 
 
 def command_backtest(args: argparse.Namespace) -> None:
-    defaults = _load_defaults()
+    """Deprecated alias for the canonical baseline evaluation command."""
+
+    if args.config:
+        raise SystemExit(
+            "canonical backtest does not accept --config; use `autopredict evaluate` "
+            "with a versioned dataset manifest"
+        )
     if not args.dataset:
         raise SystemExit(
-            "backtest requires --dataset with real historical/resolved market data. "
+            "backtest requires --dataset pointing to an autopredict.dataset.v1 manifest. "
             "AutoPredict does not ship synthetic default market datasets."
         )
-    config_path = (
-        _resolve_cli_path(args.config)
-        if args.config
-        else _resolve_default(defaults["default_strategy_config"])
-    )
-    dataset_path = _resolve_cli_path(args.dataset)
-    guidance_path = _resolve_default(defaults["strategy_guidance"])
+    print("backtest is deprecated; using canonical market-baseline evaluation", file=sys.stderr)
+    rendered = _evaluate_manifest(args.dataset, provider="market-baseline")
+    defaults = _load_defaults()
     state_dir = _resolve_default(defaults["state_dir"], runtime_output=True)
-    output_root = state_dir / datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S")
-    output_root.mkdir(parents=True, exist_ok=True)
+    output_root = state_dir / datetime.now(timezone.utc).strftime("%Y%m%d-%H%M%S-%f")
+    output_root.mkdir(parents=True, exist_ok=False)
+    (output_root / "metrics.json").write_text(rendered, encoding="utf-8")
+    if args.output:
+        output_path = _resolve_cli_path(args.output)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(rendered, encoding="utf-8")
+    print(rendered, end="")
 
-    metrics = run_backtest(
-        config_path=config_path,
-        dataset_path=dataset_path,
-        strategy_guidance_path=guidance_path,
-        starting_bankroll=float(defaults["starting_bankroll"]),
-    )
-    output_path = output_root / "metrics.json"
-    output_path.write_text(json.dumps(metrics, indent=2, sort_keys=True), encoding="utf-8")
-    print(json.dumps(metrics, indent=2, sort_keys=True))
+
+def _load_manifest(path_like: str | Path):
+    try:
+        return load_dataset_v1(_resolve_cli_path(path_like))
+    except (DatasetValidationError, OSError, UnicodeError) as exc:
+        raise SystemExit(f"dataset validation failed: {exc}") from exc
+
+
+def _evaluate_manifest(path_like: str | Path, *, provider: str) -> str:
+    if provider != "market-baseline":
+        raise SystemExit(f"unsupported forecast provider: {provider}")
+    dataset = _load_manifest(path_like)
+    try:
+        report = evaluate_market_baseline(dataset)
+    except ValueError as exc:
+        raise SystemExit(f"evaluation failed: {exc}") from exc
+    return report_json(report)
+
+
+def command_validate(args: argparse.Namespace) -> None:
+    """Validate a canonical dataset without evaluating forecasts."""
+
+    dataset = _load_manifest(args.dataset)
+    payload = {
+        "valid": True,
+        "schema_version": "autopredict.dataset.v1",
+        "dataset_id": dataset.manifest.dataset_id,
+        "dataset_sha256": dataset.dataset_sha256,
+        "record_count": dataset.manifest.record_count,
+        "observations": len(dataset.observations),
+        "resolutions": len(dataset.resolutions),
+        "independent_events": len({observation.event_id for observation in dataset.observations}),
+        "completeness": dataset.manifest.completeness,
+        "warnings": list(dataset.manifest.warnings),
+    }
+    print(json.dumps(payload, indent=2, sort_keys=True, allow_nan=False))
+
+
+def command_evaluate(args: argparse.Namespace) -> None:
+    """Evaluate a canonical dataset with an explicit forecast provider."""
+
+    rendered = _evaluate_manifest(args.dataset, provider=args.provider)
+    if args.output:
+        output_path = _resolve_cli_path(args.output)
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        output_path.write_text(rendered, encoding="utf-8")
+    print(rendered, end="")
 
 
 def command_score_latest(args: argparse.Namespace) -> None:
@@ -170,7 +221,11 @@ def command_learn_analyze(args: argparse.Namespace) -> None:
     """Analyze recent trading performance from logs."""
 
     defaults = _load_defaults()
-    log_dir = _resolve_cli_path(args.log_dir) if args.log_dir else _resolve_default("state/trades", runtime_output=True)
+    log_dir = (
+        _resolve_cli_path(args.log_dir)
+        if args.log_dir
+        else _resolve_default("state/trades", runtime_output=True)
+    )
 
     logger = TradeLogger(log_dir)
     if args.days:
@@ -227,7 +282,9 @@ def command_learn_tune(args: argparse.Namespace) -> None:
     print("Parameter tuning requires full backtest integration.")
     print("Use `autopredict learn improve --dataset <resolved-data.json>` for ratcheted runs.")
     print("\nExample:")
-    print("  autopredict learn improve --dataset resolved_markets.json --archive-dir state/archives")
+    print(
+        "  autopredict learn improve --dataset resolved_markets.json --archive-dir state/archives"
+    )
 
 
 def command_learn_improve(args: argparse.Namespace) -> None:
@@ -239,7 +296,7 @@ def command_learn_improve(args: argparse.Namespace) -> None:
             "AutoPredict does not ship synthetic default market datasets."
         )
     dataset_path = _resolve_cli_path(args.dataset)
-    snapshots = load_resolved_snapshots(dataset_path)
+    snapshots = load_legacy_resolved_snapshots(dataset_path)
     config = improvement_config_with_population(
         population_size=args.population_size,
         train_size=args.train_size,
@@ -258,9 +315,7 @@ def command_learn_improve(args: argparse.Namespace) -> None:
         "num_snapshots": len(snapshots),
     }
     if getattr(args, "recalibrate", False):
-        fit_sample_size = summary.initial_genome.get("metadata", {}).get(
-            "fit_sample_size", 0
-        )
+        fit_sample_size = summary.initial_genome.get("metadata", {}).get("fit_sample_size", 0)
         payload["num_warmup_snapshots"] = fit_sample_size
         payload["num_evaluation_snapshots"] = len(snapshots) - fit_sample_size
 
@@ -313,10 +368,34 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="AutoPredict experiment CLI")
     subparsers = parser.add_subparsers(dest="command", required=True)
 
-    backtest = subparsers.add_parser("backtest", help="Run a backtest over user-provided resolved market snapshots")
-    backtest.add_argument("--config", help="Path to strategy config JSON")
-    backtest.add_argument("--dataset", help="Path to dataset JSON")
+    backtest = subparsers.add_parser(
+        "backtest",
+        help="Deprecated alias for canonical market-baseline evaluation",
+    )
+    backtest.add_argument("--config", help=argparse.SUPPRESS)
+    backtest.add_argument("--dataset", help="Path to autopredict.dataset.v1 manifest")
+    backtest.add_argument("--output", help="Optional deterministic report JSON path")
     backtest.set_defaults(func=command_backtest)
+
+    validate = subparsers.add_parser(
+        "validate",
+        help="Validate a versioned point-in-time dataset",
+    )
+    validate.add_argument("--dataset", required=True, help="Path to dataset manifest JSON")
+    validate.set_defaults(func=command_validate)
+
+    evaluate = subparsers.add_parser(
+        "evaluate",
+        help="Evaluate forecasts against a market-implied baseline",
+    )
+    evaluate.add_argument("--dataset", required=True, help="Path to dataset manifest JSON")
+    evaluate.add_argument(
+        "--provider",
+        choices=("market-baseline",),
+        default="market-baseline",
+    )
+    evaluate.add_argument("--output", help="Optional deterministic report JSON path")
+    evaluate.set_defaults(func=command_evaluate)
 
     score_latest = subparsers.add_parser("score-latest", help="Print the latest metrics JSON")
     score_latest.set_defaults(func=command_score_latest)
@@ -353,7 +432,9 @@ def build_parser() -> argparse.ArgumentParser:
     learn = subparsers.add_parser("learn", help="Self-improvement and learning tools")
     learn_subparsers = learn.add_subparsers(dest="learn_command", required=True)
 
-    learn_analyze = learn_subparsers.add_parser("analyze", help="Analyze recent trading performance")
+    learn_analyze = learn_subparsers.add_parser(
+        "analyze", help="Analyze recent trading performance"
+    )
     learn_analyze.add_argument("--log-dir", help="Directory containing trade logs")
     learn_analyze.add_argument("--days", type=int, help="Only analyze last N days")
     learn_analyze.add_argument("--output", help="Save full report to JSON file")
@@ -366,9 +447,15 @@ def build_parser() -> argparse.ArgumentParser:
 
     learn_improve = learn_subparsers.add_parser("improve", help="Run full improvement loop")
     learn_improve.add_argument("--dataset", help="Resolved-market dataset JSON file")
-    learn_improve.add_argument("--population-size", type=int, default=5, help="Population size per fold")
-    learn_improve.add_argument("--train-size", type=int, default=3, help="Train windows or groups per fold")
-    learn_improve.add_argument("--validation-size", type=int, default=1, help="Validation windows or groups per fold")
+    learn_improve.add_argument(
+        "--population-size", type=int, default=5, help="Population size per fold"
+    )
+    learn_improve.add_argument(
+        "--train-size", type=int, default=3, help="Train windows or groups per fold"
+    )
+    learn_improve.add_argument(
+        "--validation-size", type=int, default=1, help="Validation windows or groups per fold"
+    )
     learn_improve.add_argument(
         "--recalibrate",
         action="store_true",

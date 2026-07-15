@@ -11,6 +11,7 @@ Use this folder when you want more detail than the top-level README and quicksta
 ## Reference guides
 
 - [BACKTESTING.md](BACKTESTING.md): how to interpret backtest results and avoid common evaluation mistakes
+- [DATASETS.md](DATASETS.md): canonical manifest, JSONL records, hashing, and point-in-time rules
 - [METRICS.md](METRICS.md): definitions and target ranges for the reported metrics
 - [LEARNING.md](LEARNING.md): how to use the built-in feedback loop to improve the agent iteratively
 - [DEPLOYMENT.md](DEPLOYMENT.md): paper deployment and the disabled live-execution boundary

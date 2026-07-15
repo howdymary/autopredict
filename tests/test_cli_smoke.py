@@ -8,11 +8,11 @@ from pathlib import Path
 import subprocess
 import sys
 
-
 ROOT = Path(__file__).resolve().parent.parent
+CANONICAL_MANIFEST = ROOT / "tests/fixtures/datasets/resolved-v1/manifest.json"
 
 
-def _write_resolved_dataset(path: Path) -> None:
+def _write_legacy_resolved_dataset(path: Path) -> None:
     path.write_text(
         json.dumps(
             [
@@ -118,32 +118,26 @@ def test_module_backtest_requires_explicit_real_dataset() -> None:
 
 
 def test_module_backtest_outputs_metrics_json(tmp_path: Path) -> None:
-    dataset_path = tmp_path / "resolved_markets.json"
-    _write_resolved_dataset(dataset_path)
-
-    completed = _run_cli("backtest", "--dataset", str(dataset_path))
+    completed = _run_cli("backtest", "--dataset", str(CANONICAL_MANIFEST))
     metrics = json.loads(completed.stdout)
 
-    assert metrics["num_trades"] >= 1
-    assert metrics["ending_bankroll"] > 0
-    assert "agent_feedback" in metrics
+    assert metrics["report_version"] == "autopredict.evaluation.v1"
+    assert metrics["provider"]["name"] == "market-baseline"
+    assert metrics["skill"] == {"brier_skill": 0.0, "log_skill": 0.0}
 
 
 def test_module_score_latest_reads_saved_metrics(tmp_path: Path) -> None:
-    dataset_path = tmp_path / "resolved_markets.json"
-    _write_resolved_dataset(dataset_path)
-
-    _run_cli("backtest", "--dataset", str(dataset_path))
+    _run_cli("backtest", "--dataset", str(CANONICAL_MANIFEST))
     completed = _run_cli("score-latest")
     metrics = json.loads(completed.stdout)
 
-    assert "total_pnl" in metrics
-    assert "sharpe" in metrics
+    assert metrics["report_version"] == "autopredict.evaluation.v1"
+    assert metrics["valid"] is True
 
 
 def test_legacy_run_experiment_script_executes_directly(tmp_path: Path) -> None:
     dataset_path = tmp_path / "resolved_markets.json"
-    _write_resolved_dataset(dataset_path)
+    _write_legacy_resolved_dataset(dataset_path)
 
     completed = _run_legacy_script(
         "--config",

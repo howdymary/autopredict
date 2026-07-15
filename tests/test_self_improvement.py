@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import importlib
+import math
+from dataclasses import replace
 from datetime import datetime, timedelta
 from typing import Any
 
@@ -30,6 +32,8 @@ from autopredict.self_improvement import (
     WalkForwardConfig,
     WalkForwardReport,
     WalkForwardSplit,
+    build_run_archive,
+    run_forecast_owned_ratchet,
 )
 
 
@@ -135,16 +139,19 @@ def _make_result(
         spherical_score=0.80,
         calibration=calibration,
     )
-    forecasts = ()
-    if forecast_report_card is not None:
-        forecasts = (
-            BinaryForecast(
-                market_id="selection-metadata-market",
-                probability=0.55,
-                outcome=1,
-                metadata={"report_card": forecast_report_card},
+    forecasts = tuple(
+        BinaryForecast(
+            market_id=f"selection-market-{index}",
+            probability=0.55,
+            outcome=1,
+            metadata=(
+                {"report_card": forecast_report_card}
+                if forecast_report_card is not None and index == 0
+                else {}
             ),
         )
+        for index in range(num_filled_trades)
+    )
     return BacktestResult(
         decisions=(),
         forecasts=forecasts,
@@ -307,6 +314,80 @@ def test_selection_policy_prefers_guardrailed_candidate_over_raw_score_outlier(
     assert [candidate.genome.name for candidate in outcome.rejected] == ["baseline_aggressive"]
     assert outcome.rejection_reasons["baseline_aggressive"] == ("calibration_regression",)
     assert outcome.to_dict()["winner"]["name"] == "baseline_conservative"
+
+
+def test_selection_default_allows_small_folds_to_feed_aggregate_promotion(
+    baseline_genome: StrategyGenome,
+) -> None:
+    mutator = StrategyMutator(MutationConfig(seed=7, population_size=2))
+    baseline, candidate = mutator.generate_population(baseline_genome)
+    baseline_eval = CandidateEvaluation(
+        baseline_genome,
+        _make_result(
+            log_score=0.20,
+            brier_score=0.20,
+            calibration_gap=0.01,
+            total_pnl=1.0,
+            slippage_bps=5.0,
+        ),
+    )
+    candidate_eval = CandidateEvaluation(
+        candidate,
+        _make_result(
+            log_score=0.40,
+            brier_score=0.10,
+            calibration_gap=0.01,
+            total_pnl=5.0,
+            slippage_bps=1.0,
+        ),
+    )
+
+    outcome = StrategySelector().select([baseline_eval, candidate_eval])
+
+    assert outcome.winner is candidate_eval
+    assert candidate.name not in outcome.rejection_reasons
+
+
+def test_selection_rejects_mismatched_and_nonfinite_evidence(
+    baseline_genome: StrategyGenome,
+) -> None:
+    mutator = StrategyMutator(MutationConfig(seed=7, population_size=2))
+    baseline, candidate = mutator.generate_population(baseline_genome)
+    baseline_result = _make_result(
+        log_score=0.20,
+        brier_score=0.20,
+        calibration_gap=0.01,
+        total_pnl=1.0,
+        slippage_bps=5.0,
+    )
+    candidate_result = _make_result(
+        log_score=0.40,
+        brier_score=0.10,
+        calibration_gap=0.01,
+        total_pnl=5.0,
+        slippage_bps=1.0,
+    )
+    mismatched_forecasts = (
+        replace(candidate_result.forecasts[0], market_id="different-market"),
+        candidate_result.forecasts[1],
+    )
+    invalid_scoring = replace(candidate_result.scoring, log_score=math.nan)
+    candidate_result = replace(
+        candidate_result,
+        forecasts=mismatched_forecasts,
+        scoring=invalid_scoring,
+    )
+
+    outcome = StrategySelector().select(
+        [
+            CandidateEvaluation(baseline, baseline_result),
+            CandidateEvaluation(candidate, candidate_result),
+        ]
+    )
+
+    assert outcome.winner.genome == baseline
+    assert "paired_forecast_rows_mismatch" in outcome.rejection_reasons[candidate.name]
+    assert "nonfinite_scoring_evidence" in outcome.rejection_reasons[candidate.name]
 
 
 def test_self_improvement_loop_evaluates_population_and_picks_winner(
@@ -562,6 +643,58 @@ def test_walk_forward_promotes_candidate_only_after_validation(
     assert fold.validation_selection.winner.genome.name == "baseline_conservative"
     assert fold.train_split_labels == ()
     assert fold.validation_split_labels == ()
+
+
+def test_default_three_one_walk_forward_can_evolve_on_small_local_folds(
+    monkeypatch: pytest.MonkeyPatch,
+    baseline_genome: StrategyGenome,
+) -> None:
+    """The 30-event gate belongs to aggregate frontier promotion, not local mutation."""
+
+    loop = SelfImprovementLoop()
+    snapshots = [_make_resolved_snapshot(index) for index in range(4)]
+
+    def fake_run(agent, fold_snapshots, starting_cash=1000.0):
+        del fold_snapshots, starting_cash
+        strategy = agent.strategy
+        is_conservative = abs(strategy.policy.min_abs_edge - 0.05625) <= 1e-9
+        return _make_result(
+            log_score=0.30 if is_conservative else 0.20,
+            brier_score=0.10 if is_conservative else 0.20,
+            calibration_gap=0.01,
+            total_pnl=4.0 if is_conservative else 1.0,
+            slippage_bps=2.0 if is_conservative else 5.0,
+        )
+
+    monkeypatch.setattr(loop.backtester, "run", fake_run)
+
+    report = loop.run_walk_forward(baseline_genome, snapshots)
+
+    assert loop.config.walk_forward.train_size == 3
+    assert loop.config.walk_forward.validation_size == 1
+    assert report.promotions == 1
+    assert report.final_genome.name == "baseline_conservative"
+
+
+def test_real_ratchet_emits_strict_typed_promotion_rows(tmp_path) -> None:
+    snapshots = [_make_resolved_snapshot(index) for index in range(5)]
+
+    summary = run_forecast_owned_ratchet("unused.json", snapshots=snapshots)
+    archive = build_run_archive(
+        summary.to_dict(),
+        dataset_hash="dataset-hash",
+        config={"split_mode": "chronological"},
+        repo_root=tmp_path,
+        dependency_names=(),
+    )
+
+    rows = summary.promotion_evaluation["rows"]
+    assert rows
+    assert all(isinstance(row["market_probability"], float) for row in rows)
+    assert all(row["market_probability"] == 0.50 for row in rows)
+    reasons = archive["promotion_attempt"]["rejection_reasons"]
+    assert not any(reason.startswith("invalid_promotion_row:") for reason in reasons)
+    assert not any("mismatch" in reason for reason in reasons)
 
 
 def test_walk_forward_rejects_candidate_that_fails_validation_guardrails(

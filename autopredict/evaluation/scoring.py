@@ -17,17 +17,22 @@ class BinaryForecast:
     market_id: str
     probability: float
     outcome: int
+    market_probability: float | None = None
     metadata: dict[str, Any] = field(default_factory=dict)
 
     def __post_init__(self) -> None:
         if not self.market_id:
             raise ValueError("market_id cannot be empty")
         if not (0.0 <= self.probability <= 1.0):
-            raise ValueError(
-                f"probability must be in [0, 1], got {self.probability}"
-            )
+            raise ValueError(f"probability must be in [0, 1], got {self.probability}")
         if self.outcome not in (0, 1):
             raise ValueError(f"outcome must be 0 or 1, got {self.outcome}")
+        if self.market_probability is not None and not (
+            math.isfinite(self.market_probability) and 0.0 <= self.market_probability <= 1.0
+        ):
+            raise ValueError(
+                "market_probability must be finite and in [0, 1], " f"got {self.market_probability}"
+            )
 
 
 @dataclass(frozen=True)

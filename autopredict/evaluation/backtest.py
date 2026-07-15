@@ -39,8 +39,7 @@ class ExecutionAssumptions:
             )
         if not (0.0 <= self.maker_fee_fraction <= 1.0):
             raise ValueError(
-                "maker_fee_fraction must be in [0, 1], "
-                f"got {self.maker_fee_fraction}"
+                "maker_fee_fraction must be in [0, 1], " f"got {self.maker_fee_fraction}"
             )
 
 
@@ -171,6 +170,7 @@ class PredictionMarketBacktester:
                         market_id=snapshot.market.market_id,
                         probability=decision.signal.fair_prob,
                         outcome=snapshot.outcome,
+                        market_probability=snapshot.market.market_prob,
                         metadata={
                             **merged_metadata,
                             **decision.signal.metadata,

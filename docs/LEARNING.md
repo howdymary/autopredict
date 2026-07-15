@@ -18,7 +18,7 @@ The command:
 - mutates a strategy genome
 - evaluates candidates with proper scoring and execution metrics
 - writes an archive when requested
-- promotes to the frontier only when the selected score improves for the same dataset hash, split mode, and strategy kind
+- considers frontier promotion only after a corrected paired-evidence check passes for the same dataset hash, split mode, and strategy kind
 
 The default genome routes to the domain specialists, which use the market-implied
 no-edge model (`fair_prob == market_prob`). That baseline never fabricates alpha,
@@ -66,6 +66,15 @@ datasets and claims no unverified alpha.
 
 Archives are JSON episode packages. They include provenance, dependency versions, dataset path/hash, config, final genome, fold metrics, report cards, rejection reasons, and warnings when present.
 
+Archive schema 2 also records a canonical content-derived attempt ID, a separate
+optional operator run ID, raw-evidence and content SHA-256 digests,
+dataset/method/provider versions, the corrected threshold, and the complete
+evidence summary. The rebuild path cross-checks those independent provenance
+fields before promotion. Archive
+schema 1 did not preserve enough evidence to reproduce a decision and therefore
+fails with an explicit migration error if passed to `promote_archive`; rerun the
+offline evaluation to create a schema-2 archive.
+
 Use archives when comparing harness changes because scalar metrics alone are not enough to diagnose long-horizon failures.
 
 ## Frontier
@@ -78,9 +87,31 @@ dataset_hash | split_mode | strategy_kind
 
 That keeps improvements comparable and prevents a run on one dataset from overwriting a different evaluation surface.
 
+Frontier acceptance is intentionally stricter than a scalar score comparison:
+
+- every out-of-fold selected forecast is paired with the contemporaneous market probability on the same resolved row
+- the exact multiset of `(fold_index, event_id, market_id[, snapshot_id])` row identities must match the declared holdout surface; duplicate or reweighted identities fail closed
+- distinct markets under one event may resolve differently, while outcome consistency is enforced for each event-and-market pair
+- uncertainty is still clustered by `event_id`, so correlated markets and snapshots do not increase the independent sample count
+- frontier promotion always requires at least 30 independent events, alpha at most 0.05, and Bonferroni correction, even if an archive records a more lenient exploratory policy
+- uncertainty is computed from event-cluster mean Brier-loss differences using a finite-sample one-sided Student-t bound
+- the one-sided alpha is Bonferroni-corrected by the number of candidate hypotheses tried in the run
+- that hypothesis count is derived from a complete per-fold attempted-artifact manifest and cannot be supplied independently
+- the corrected lower confidence bound must exceed the configured minimum improvement
+- each row identifies its evaluated provider and artifact; mixed fold winners are promoted as the evaluated walk-forward trajectory rather than falsely attributed to the final genome
+- the contemporaneous market probability is carried by the typed forecast record, while row provider/artifact identity is derived from the canonical fold winner and provider configuration
+- missing rows, swapped mappings, duplicate weighting, non-finite values, conflicting outcomes, and incomplete metadata reject the attempt without writing the frontier
+- immutable attempt IDs are checked across the whole frontier before score comparison
+
+Small 3/1 train-validation folds may evolve the local ratchet. The 30-event gate
+applies only after their out-of-fold evidence is aggregated for frontier
+promotion. Bonferroni correction covers the hypotheses declared within one
+attempt; repeatedly searching the same dataset across separate attempts remains
+exploratory and is recorded as a caveat in frontier metadata.
+
 ## Guardrails
 
 - No bundled market datasets are used.
 - No domain model trains on packaged examples by default.
 - Missing live data remains missing.
-- Promotions are explicit, scored, and tied to dataset identity.
+- Promotions are explicit, statistically corrected, auditable, and tied to dataset identity.

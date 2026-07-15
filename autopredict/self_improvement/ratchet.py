@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from dataclasses import dataclass, replace
+import hashlib
+import json
+from dataclasses import asdict, dataclass, field, replace
 from pathlib import Path
 from typing import Any, Sequence
 
@@ -23,6 +25,7 @@ class ForecastRatchetSummary:
     promotions: int
     folds: tuple[dict[str, Any], ...]
     agent_owns_forecast_generation: bool = True
+    promotion_evaluation: dict[str, Any] = field(default_factory=dict)
 
     def to_dict(self) -> dict[str, Any]:
         """Serialize the ratchet summary for CLI and experiment logs."""
@@ -34,6 +37,7 @@ class ForecastRatchetSummary:
             "promotions": self.promotions,
             "folds": list(self.folds),
             "agent_owns_forecast_generation": self.agent_owns_forecast_generation,
+            "promotion_evaluation": self.promotion_evaluation,
         }
 
 
@@ -98,12 +102,8 @@ def fit_recalibrated_genome(
     """
 
     genome = base_genome or default_recalibrated_genome()
-    pairs = [
-        (snapshot.market.market_prob, snapshot.outcome) for snapshot in snapshots
-    ]
-    model = MarketRecalibrationModel.fit(
-        pairs, identity_regularization=identity_regularization
-    )
+    pairs = [(snapshot.market.market_prob, snapshot.outcome) for snapshot in snapshots]
+    model = MarketRecalibrationModel.fit(pairs, identity_regularization=identity_regularization)
     return replace(
         genome,
         strategy_kind="market_recalibrated",
@@ -143,9 +143,7 @@ def run_market_recalibration_ratchet(
     snapshots = load_resolved_snapshots(dataset_path)
     ordered = sorted(snapshots, key=lambda snapshot: snapshot.observed_at)
     if len(ordered) < 3:
-        raise ValueError(
-            "recalibration ratchet requires at least 3 resolved snapshots"
-        )
+        raise ValueError("recalibration ratchet requires at least 3 resolved snapshots")
 
     warmup_count = max(1, min(len(ordered) - 2, int(len(ordered) * warmup_fraction)))
     warmup_snapshots = ordered[:warmup_count]
@@ -189,7 +187,37 @@ def run_forecast_owned_ratchet(
     report = loop.run_walk_forward(base_genome or default_forecast_owned_genome(), snapshots)
 
     fold_summaries: list[dict[str, Any]] = []
+    promotion_rows: list[dict[str, Any]] = []
+    expected_row_identities: list[dict[str, Any]] = []
+    attempted_artifacts: list[dict[str, Any]] = []
+    evaluated_trajectory: list[dict[str, Any]] = []
+    hypothesis_count = 0
     for fold in report.folds:
+        genome_payload = fold.winner.genome.to_dict()
+        artifact_id = _artifact_id(genome_payload)
+        provider_version = "provider-config-sha256:" + _canonical_sha256(
+            {
+                "artifact_id": artifact_id,
+                "agent_run": asdict(loop.config.agent_run),
+            }
+        )
+        population_artifacts = [
+            _artifact_id(candidate.genome.to_dict()) for candidate in fold.train_report.population
+        ]
+        attempted_artifacts.append(
+            {
+                "fold_index": fold.fold_index,
+                "baseline_artifact_id": population_artifacts[0],
+                "artifact_ids": population_artifacts,
+            }
+        )
+        evaluated_trajectory.append(
+            {
+                "fold_index": fold.fold_index,
+                "provider_version": provider_version,
+                "artifact_id": artifact_id,
+            }
+        )
         winner_report_card = fold.winner.primary_report_card()
         validation_metrics = fold.winner.result.metrics
         fold_summaries.append(
@@ -212,6 +240,41 @@ def run_forecast_owned_ratchet(
                 "winner_report_card": winner_report_card,
             }
         )
+        hypothesis_count += max(len(fold.train_report.population) - 1, 0)
+        for forecast in fold.winner.result.forecasts:
+            metadata = forecast.metadata
+            if metadata.get("artifact_id") not in (None, artifact_id):
+                raise ValueError("forecast artifact metadata conflicts with the canonical winner")
+            if metadata.get("provider_version") not in (None, provider_version):
+                raise ValueError("forecast provider metadata conflicts with the canonical config")
+            if forecast.market_probability is None:
+                raise ValueError("forecast is missing typed contemporaneous market_probability")
+            row = {
+                "event_id": str(metadata.get("event_id", forecast.market_id)),
+                "market_id": forecast.market_id,
+                "fold_index": fold.fold_index,
+                "provider_version": provider_version,
+                "artifact_id": artifact_id,
+                "candidate_probability": forecast.probability,
+                "market_probability": forecast.market_probability,
+                "outcome": forecast.outcome,
+            }
+            if metadata.get("snapshot_id") is not None:
+                row["snapshot_id"] = str(metadata["snapshot_id"])
+            promotion_rows.append(row)
+        for event_id, market_id, snapshot_id in zip(
+            fold.validation_event_ids or fold.validation_market_ids,
+            fold.validation_market_ids,
+            fold.validation_snapshot_ids or tuple(None for _ in fold.validation_market_ids),
+        ):
+            identity = {
+                "event_id": event_id,
+                "market_id": market_id,
+                "fold_index": fold.fold_index,
+            }
+            if snapshot_id is not None:
+                identity["snapshot_id"] = snapshot_id
+            expected_row_identities.append(identity)
 
     return ForecastRatchetSummary(
         dataset_path=str(Path(dataset_path)),
@@ -219,7 +282,24 @@ def run_forecast_owned_ratchet(
         final_genome=report.final_genome.to_dict(),
         promotions=report.promotions,
         folds=tuple(fold_summaries),
+        promotion_evaluation={
+            "rows": promotion_rows,
+            "expected_row_identities": expected_row_identities,
+            "attempted_artifacts": attempted_artifacts,
+            "evaluated_trajectory": evaluated_trajectory,
+            "hypothesis_count": hypothesis_count,
+        },
     )
+
+
+def _canonical_sha256(value: Any) -> str:
+    return hashlib.sha256(
+        json.dumps(value, allow_nan=False, separators=(",", ":"), sort_keys=True).encode("utf-8")
+    ).hexdigest()
+
+
+def _artifact_id(genome: dict[str, Any]) -> str:
+    return "genome-sha256:" + _canonical_sha256(genome)
 
 
 def improvement_config_with_population(

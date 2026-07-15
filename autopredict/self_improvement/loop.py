@@ -113,6 +113,8 @@ class WalkForwardFoldReport:
     promoted: bool
     train_split_labels: tuple[str, ...] = ()
     validation_split_labels: tuple[str, ...] = ()
+    validation_event_ids: tuple[str, ...] = ()
+    validation_snapshot_ids: tuple[str | None, ...] = ()
 
     @property
     def candidate_genome(self) -> StrategyGenome:
@@ -231,6 +233,18 @@ class SelfImprovementLoop:
                     ),
                     train_split_labels=split.train_labels,
                     validation_split_labels=split.validation_labels,
+                    validation_event_ids=tuple(
+                        str(snapshot.metadata.get("event_id", snapshot.market.market_id))
+                        for snapshot in split.validation_snapshots
+                    ),
+                    validation_snapshot_ids=tuple(
+                        (
+                            str(snapshot.metadata["snapshot_id"])
+                            if snapshot.metadata.get("snapshot_id") is not None
+                            else None
+                        )
+                        for snapshot in split.validation_snapshots
+                    ),
                     train_report=train_report,
                     validation_baseline=validation_baseline,
                     validation_candidate=validation_candidate,
@@ -428,8 +442,7 @@ class SelfImprovementLoop:
             for feature in walk_forward.regime_features
         }
         return tuple(
-            self._auto_regime_label(snapshot, thresholds)
-            for snapshot in ordered_snapshots
+            self._auto_regime_label(snapshot, thresholds) for snapshot in ordered_snapshots
         )
 
     def _auto_regime_label(

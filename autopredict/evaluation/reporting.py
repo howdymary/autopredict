@@ -71,6 +71,7 @@ def evaluate_provider(
                 market_id=observation.market_id,
                 probability=probability,
                 outcome=outcome,
+                market_probability=observation.market_probability,
             )
         )
         baseline_forecasts.append(
@@ -78,6 +79,7 @@ def evaluate_provider(
                 market_id=observation.market_id,
                 probability=observation.market_probability,
                 outcome=outcome,
+                market_probability=observation.market_probability,
             )
         )
         rows.append(

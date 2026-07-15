@@ -13,12 +13,17 @@ from enum import Enum
 from pathlib import Path
 from typing import Any, Iterator, Mapping
 
+from autopredict.self_improvement.archive import (
+    rebuild_promotion_attempt,
+    rebuild_trusted_promotion_attempt,
+)
+
 try:
     import fcntl
 except ImportError:  # pragma: no cover - fcntl is available on production POSIX targets.
     fcntl = None  # type: ignore[assignment]
 
-FRONTIER_SCHEMA_VERSION = 1
+FRONTIER_SCHEMA_VERSION = 2
 
 
 @dataclass(frozen=True)
@@ -61,10 +66,13 @@ class FrontierStore:
             payload = json.load(handle)
         if not isinstance(payload, dict):
             raise ValueError("frontier file must contain a JSON object")
+        if payload.get("schema_version") != FRONTIER_SCHEMA_VERSION:
+            raise ValueError(
+                "legacy frontier schema is not promotable; migrate or rebuild as schema 2"
+            )
         entries = payload.setdefault("entries", {})
         if not isinstance(entries, dict):
             raise ValueError("frontier entries must be a JSON object")
-        payload.setdefault("schema_version", FRONTIER_SCHEMA_VERSION)
         return payload
 
     def entries(self) -> dict[str, dict[str, Any]]:
@@ -91,6 +99,21 @@ class FrontierStore:
         return dict(entry) if isinstance(entry, Mapping) else None
 
     def promote(
+        self,
+        **_: Any,
+    ) -> FrontierPromotion:
+        """Reject unsupported scalar-only promotion attempts.
+
+        Callers must use :func:`promote_archive`, which recomputes and verifies
+        paired out-of-fold evidence before this store is mutated.
+        """
+
+        raise ValueError(
+            "direct scalar frontier promotion is disabled; use promote_archive "
+            "with a schema-2 evidence archive"
+        )
+
+    def _promote_verified(
         self,
         *,
         dataset_hash: str,
@@ -146,6 +169,25 @@ class FrontierStore:
         with _locked_frontier(self.path):
             payload = self.load()
             entries = payload["entries"]
+            attempt_id = (
+                str(metadata.get("attempt_id", "")).strip() if isinstance(metadata, Mapping) else ""
+            )
+            if attempt_id:
+                for existing in entries.values():
+                    if not isinstance(existing, Mapping):
+                        continue
+                    existing_metadata = existing.get("metadata")
+                    if (
+                        isinstance(existing_metadata, Mapping)
+                        and existing_metadata.get("attempt_id") == attempt_id
+                    ):
+                        entry["frontier_rejection_reasons"] = ["duplicate_attempt_id"]
+                        return FrontierPromotion(
+                            accepted=False,
+                            key=key,
+                            entry=entry,
+                            previous=dict(existing),
+                        )
             previous = entries.get(key)
             if previous is not None and not isinstance(previous, Mapping):
                 raise ValueError(f"frontier entry for {key!r} must be a JSON object")
@@ -159,6 +201,7 @@ class FrontierStore:
                     else score_value < previous_score
                 )
                 if not is_better:
+                    entry["frontier_rejection_reasons"] = ["not_better_than_current_frontier"]
                     return FrontierPromotion(
                         accepted=False,
                         key=key,
@@ -188,46 +231,144 @@ def promote_archive(
     run_id: str | None = None,
     promoted_at: datetime | str | None = None,
 ) -> FrontierPromotion:
-    """Promote an archive payload using a score verified against archived metrics."""
+    """Promote an archive only when its corrected paired evidence accepts it.
+
+    ``score`` and ``metric_name`` remain accepted for CLI compatibility, but
+    neither can override the archived statistical decision. New frontier
+    entries always compare the archived mean paired Brier improvement.
+    """
+
+    schema_version = archive.get("schema_version")
+    if schema_version != 2:
+        raise ValueError(
+            "legacy archive cannot be promoted: rebuild it with archive schema 2 "
+            "to include paired out-of-fold promotion evidence"
+        )
 
     dataset = archive.get("dataset")
     if not isinstance(dataset, Mapping) or not dataset.get("sha256"):
         raise ValueError("archive must include dataset.sha256 to promote")
+    if not dataset.get("version"):
+        raise ValueError("archive must include dataset.version to promote")
 
     split_mode = _archive_split_mode(archive)
     strategy_kind = _archive_strategy_kind(archive)
-    metrics = _archive_winner_metrics(archive)
-    if metrics is None:
-        raise ValueError("archive must include winner metrics to promote")
-    archive_score = _coerce_metric_score(metrics, metric_name)
-    if score is not None and not math.isclose(
-        float(score),
-        archive_score,
-        rel_tol=1e-12,
-        abs_tol=1e-12,
+    attempt = archive.get("promotion_attempt")
+    if not isinstance(attempt, Mapping):
+        raise ValueError("archive must include promotion_attempt evidence")
+    rebuilt_attempt = rebuild_promotion_attempt(archive)
+    if dict(attempt) != rebuilt_attempt:
+        raise ValueError("promotion_attempt does not match the archive's raw out-of-fold evidence")
+    provenance = archive.get("provenance")
+    if not isinstance(provenance, Mapping) or provenance.get("attempt_id") != attempt.get(
+        "attempt_id"
     ):
-        raise ValueError(
-            f"promotion score {float(score)!r} does not match archived metric "
-            f"{metric_name!r}={archive_score!r}"
-        )
-    genome = _archive_final_genome(archive)
-    provenance = archive.get("provenance", {})
+        raise ValueError("provenance.attempt_id must match the canonical promotion attempt")
+    trusted_attempt = rebuild_trusted_promotion_attempt(archive)
+    evidence = trusted_attempt.get("evidence_summary")
+    if not isinstance(evidence, Mapping):
+        raise ValueError("promotion_attempt must include evidence_summary")
+    attempt_id = str(attempt.get("attempt_id", "")).strip()
+    if not attempt_id:
+        raise ValueError("promotion_attempt must include attempt_id")
+    for version_field in ("method_version", "provider_version", "dataset_version"):
+        if not str(attempt.get(version_field, "")).strip():
+            raise ValueError(f"promotion_attempt must include {version_field}")
+    if score is not None:
+        if isinstance(score, bool) or not isinstance(score, (int, float)):
+            raise ValueError("legacy score argument must be a number when supplied")
+        if not math.isfinite(score):
+            raise ValueError("legacy score argument must be finite when supplied")
+    genome = trusted_attempt.get("trajectory")
+    if not isinstance(genome, Mapping):
+        raise ValueError("promotion evidence must identify the evaluated trajectory")
+    rejection_reasons = trusted_attempt.get("rejection_reasons", [])
+    if not isinstance(rejection_reasons, list):
+        raise ValueError("promotion_attempt.rejection_reasons must be a list")
+    evidence_accepted = attempt.get("accepted") is True and trusted_attempt.get("accepted") is True
+    raw_archive_score = evidence.get("mean_brier_improvement")
+    raw_lower_bound = evidence.get("corrected_lower_bound")
+    archive_score = (
+        float(raw_archive_score)
+        if isinstance(raw_archive_score, (int, float)) and math.isfinite(float(raw_archive_score))
+        else 0.0
+    )
+    corrected_lower_bound = (
+        float(raw_lower_bound)
+        if isinstance(raw_lower_bound, (int, float)) and math.isfinite(float(raw_lower_bound))
+        else None
+    )
 
-    return FrontierStore(frontier_path).promote(
+    key = frontier_key(str(dataset["sha256"]), split_mode, strategy_kind)
+    entry_metadata = {
+        "attempt_id": attempt_id,
+        "dataset_version": attempt["dataset_version"],
+        "method_version": attempt["method_version"],
+        "provider_version": attempt["provider_version"],
+        "content_sha256": attempt.get("content_sha256"),
+        "evidence_sha256": attempt.get("evidence_sha256"),
+        "archive_policy": attempt.get("policy"),
+        "corrected_threshold": trusted_attempt.get("corrected_threshold"),
+        "evidence_summary": evidence,
+        "rejection_reasons": rejection_reasons,
+        "trajectory": genome,
+        "uncertainty_unit": trusted_attempt.get("uncertainty_unit"),
+        "outcome_consistency_unit": trusted_attempt.get("outcome_consistency_unit"),
+        "repeated_run_caveat": trusted_attempt.get("repeated_run_caveat"),
+        "legacy_requested_metric": metric_name,
+    }
+    if (
+        not evidence_accepted
+        or rejection_reasons
+        or corrected_lower_bound is None
+        or corrected_lower_bound <= 0.0
+    ):
+        previous = FrontierStore(frontier_path).get(
+            dataset_hash=str(dataset["sha256"]),
+            split_mode=split_mode,
+            strategy_kind=strategy_kind,
+        )
+        return FrontierPromotion(
+            accepted=False,
+            key=key,
+            entry={
+                "dataset_hash": str(dataset["sha256"]),
+                "split_mode": split_mode,
+                "strategy_kind": strategy_kind,
+                "score": archive_score,
+                "metric_name": "mean_brier_improvement",
+                "higher_is_better": True,
+                "metadata": entry_metadata,
+            },
+            previous=previous,
+        )
+
+    archive_score = _coerce_metric_score(evidence, "mean_brier_improvement")
+    corrected_lower_bound = _coerce_metric_score(evidence, "corrected_lower_bound")
+
+    return FrontierStore(frontier_path)._promote_verified(
         dataset_hash=str(dataset["sha256"]),
         split_mode=split_mode,
         strategy_kind=strategy_kind,
         score=archive_score,
-        metric_name=metric_name,
-        higher_is_better=higher_is_better,
+        metric_name="mean_brier_improvement",
+        higher_is_better=True,
         archive_path=archive_path,
         genome=genome,
-        metrics=metrics,
-        run_id=run_id or (
+        metrics={
+            "mean_brier_improvement": archive_score,
+            "candidate_brier_score": evidence.get("candidate_brier_score"),
+            "market_brier_score": evidence.get("market_brier_score"),
+            "corrected_lower_bound": corrected_lower_bound,
+            "independent_event_count": evidence.get("independent_event_count"),
+        },
+        run_id=run_id
+        or (
             str(provenance["run_id"])
             if isinstance(provenance, Mapping) and provenance.get("run_id")
             else None
         ),
+        metadata=entry_metadata,
         promoted_at=promoted_at,
     )
 
@@ -259,29 +400,6 @@ def _archive_final_genome(archive: Mapping[str, Any]) -> Any:
     if archive.get("genome") is not None:
         return archive["genome"]
     raise ValueError("archive must include a genome to promote")
-
-
-def _archive_winner_metrics(archive: Mapping[str, Any]) -> Mapping[str, Any] | None:
-    run = archive.get("run")
-    if not isinstance(run, Mapping):
-        return None
-    folds = run.get("folds")
-    if isinstance(folds, list) and folds:
-        last_fold = folds[-1]
-        if isinstance(last_fold, Mapping):
-            winner_metrics = last_fold.get("winner_metrics")
-            if isinstance(winner_metrics, Mapping):
-                return winner_metrics
-            metrics = last_fold.get("metrics")
-            if isinstance(metrics, Mapping):
-                validation = metrics.get("validation")
-                if isinstance(validation, Mapping) and isinstance(
-                    validation.get("winner"),
-                    Mapping,
-                ):
-                    return validation["winner"]
-    metrics = run.get("metrics")
-    return metrics if isinstance(metrics, Mapping) else None
 
 
 def _validate_comparable(

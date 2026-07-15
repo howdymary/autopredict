@@ -190,13 +190,15 @@ def test_write_run_archive_persists_real_walk_forward_artifacts(tmp_path: Path) 
     )
     payload = load_run_archive(archive_path)
 
-    assert payload["schema_version"] == 1
+    assert payload["schema_version"] == 2
     assert payload["provenance"]["run_id"] == "run-001"
+    assert payload["provenance"]["attempt_id"].startswith("attempt-sha256:")
     assert "autopredict" in payload["provenance"]["dependency_versions"]
     assert "git_sha" not in payload["provenance"]
     assert payload["dataset"] == {
         "path": str(dataset_path),
         "sha256": hashlib.sha256(dataset_path.read_bytes()).hexdigest(),
+        "version": "legacy-resolved-snapshots-v0",
     }
     assert payload["config"]["split_mode"] == "regime"
     assert payload["warnings"] == ["small_holdout"]
@@ -213,14 +215,15 @@ def test_write_run_archive_persists_real_walk_forward_artifacts(tmp_path: Path) 
     assert fold["train_split_labels"] == ["calm"]
     assert fold["validation_split_labels"] == ["volatile"]
     assert fold["metrics"]["validation"]["winner"]["total_pnl"] == 4.0
-    assert fold["rejection_reasons"]["train"] == {
-        "baseline_aggressive": ["brier_regression"]
-    }
+    assert fold["rejection_reasons"]["train"] == {"baseline_aggressive": ["brier_regression"]}
     report_cards = fold["report_cards"]
     assert any(card["report_card"]["coverage_score"] == 0.77 for card in report_cards)
-    assert fold["validation"]["candidate"]["result"]["forecasts"][0]["metadata"][
-        "report_card"
-    ]["dataset_name"] == "sample"
+    assert (
+        fold["validation"]["candidate"]["result"]["forecasts"][0]["metadata"]["report_card"][
+            "dataset_name"
+        ]
+        == "sample"
+    )
 
 
 def test_build_run_archive_uses_only_provided_dataset_identity(tmp_path: Path) -> None:
@@ -231,11 +234,13 @@ def test_build_run_archive_uses_only_provided_dataset_identity(tmp_path: Path) -
         dependency_names=(),
     )
 
-    assert payload["dataset"] == {"sha256": "provided-hash"}
-    assert "warnings" not in payload
-    assert payload["provenance"] == {
-        "created_at": payload["provenance"]["created_at"],
+    assert payload["dataset"] == {
+        "sha256": "provided-hash",
+        "version": "legacy-resolved-snapshots-v0",
     }
+    assert "warnings" not in payload
+    assert payload["provenance"]["attempt_id"].startswith("attempt-")
+    assert payload["provenance"]["created_at"]
 
 
 def test_build_run_archive_records_dirty_git_state(tmp_path: Path) -> None:
@@ -245,7 +250,9 @@ def test_build_run_archive_records_dirty_git_state(tmp_path: Path) -> None:
     tracked = tmp_path / "tracked.txt"
     tracked.write_text("clean\n", encoding="utf-8")
     subprocess.run(["git", "add", "tracked.txt"], cwd=tmp_path, check=True)
-    subprocess.run(["git", "commit", "-m", "initial"], cwd=tmp_path, check=True, capture_output=True)
+    subprocess.run(
+        ["git", "commit", "-m", "initial"], cwd=tmp_path, check=True, capture_output=True
+    )
     tracked.write_text("dirty\n", encoding="utf-8")
     (tmp_path / "untracked.txt").write_text("new\n", encoding="utf-8")
 
@@ -308,8 +315,8 @@ def test_archive_and_frontier_accept_lightweight_ratchet_summary(tmp_path: Path)
     )
 
     assert archive["run"]["final_genome"]["name"] == "winner"
-    assert promotion.accepted is True
-    assert promotion.entry["metrics"]["log_score"] == -0.31
+    assert promotion.accepted is False
+    assert "empty_out_of_fold_evidence" in promotion.entry["metadata"]["rejection_reasons"]
 
 
 def test_dataset_sha256_hashes_file_bytes(tmp_path: Path) -> None:
@@ -324,7 +331,7 @@ def test_frontier_store_promotes_only_improved_entries(tmp_path: Path) -> None:
     store = FrontierStore(path)
     genome = StrategyGenome(name="winner", strategy_kind="legacy_mispriced")
 
-    first = store.promote(
+    first = store._promote_verified(
         dataset_hash="hash-1",
         split_mode=WalkForwardSplit.CHRONOLOGICAL,
         strategy_kind="legacy_mispriced",
@@ -336,7 +343,7 @@ def test_frontier_store_promotes_only_improved_entries(tmp_path: Path) -> None:
         run_id="run-1",
         promoted_at="2026-01-02T00:00:00Z",
     )
-    rejected = store.promote(
+    rejected = store._promote_verified(
         dataset_hash="hash-1",
         split_mode=WalkForwardSplit.CHRONOLOGICAL,
         strategy_kind="legacy_mispriced",
@@ -344,7 +351,7 @@ def test_frontier_store_promotes_only_improved_entries(tmp_path: Path) -> None:
         metric_name="log_score",
         archive_path=tmp_path / "archive-2.json",
     )
-    improved = store.promote(
+    improved = store._promote_verified(
         dataset_hash="hash-1",
         split_mode=WalkForwardSplit.CHRONOLOGICAL,
         strategy_kind="legacy_mispriced",
@@ -368,10 +375,19 @@ def test_frontier_store_promotes_only_improved_entries(tmp_path: Path) -> None:
     assert not list(tmp_path.glob(".frontier.json.*.tmp"))
 
 
+def test_direct_scalar_frontier_promotion_is_disabled(tmp_path: Path) -> None:
+    store = FrontierStore(tmp_path / "frontier.json")
+
+    with pytest.raises(ValueError, match="direct scalar frontier promotion is disabled"):
+        store.promote(score=999.0)
+
+    assert not store.path.exists()
+
+
 def test_frontier_store_can_minimize_metrics(tmp_path: Path) -> None:
     store = FrontierStore(tmp_path / "frontier.json")
 
-    accepted = store.promote(
+    accepted = store._promote_verified(
         dataset_hash="hash-1",
         split_mode="regime",
         strategy_kind="legacy_mispriced",
@@ -379,7 +395,7 @@ def test_frontier_store_can_minimize_metrics(tmp_path: Path) -> None:
         metric_name="brier_score",
         higher_is_better=False,
     )
-    improved = store.promote(
+    improved = store._promote_verified(
         dataset_hash="hash-1",
         split_mode="regime",
         strategy_kind="legacy_mispriced",
@@ -387,7 +403,7 @@ def test_frontier_store_can_minimize_metrics(tmp_path: Path) -> None:
         metric_name="brier_score",
         higher_is_better=False,
     )
-    rejected = store.promote(
+    rejected = store._promote_verified(
         dataset_hash="hash-1",
         split_mode="regime",
         strategy_kind="legacy_mispriced",
@@ -422,15 +438,16 @@ def test_promote_archive_uses_dataset_split_and_final_genome(tmp_path: Path) -> 
         archive_path=tmp_path / "archive.json",
     )
 
-    assert promotion.accepted is True
+    assert promotion.accepted is False
     assert promotion.entry["dataset_hash"] == archive["dataset"]["sha256"]
     assert promotion.entry["split_mode"] == "regime"
     assert promotion.entry["strategy_kind"] == "legacy_mispriced"
-    assert promotion.entry["genome"]["name"] == "baseline_conservative"
-    assert promotion.entry["metrics"]["total_pnl"] == 4.0
+    assert (
+        "insufficient_independent_events:0<30" in promotion.entry["metadata"]["rejection_reasons"]
+    )
 
 
-def test_promote_archive_rejects_score_mismatched_with_archived_metrics(tmp_path: Path) -> None:
+def test_legacy_score_argument_cannot_override_rejected_evidence(tmp_path: Path) -> None:
     dataset = tmp_path / "dataset.json"
     dataset.write_text("[]", encoding="utf-8")
     archive = build_run_archive(
@@ -441,20 +458,22 @@ def test_promote_archive_rejects_score_mismatched_with_archived_metrics(tmp_path
         dependency_names=(),
     )
 
-    with pytest.raises(ValueError, match="does not match archived metric"):
-        promote_archive(
-            tmp_path / "frontier.json",
-            archive,
-            score=999.0,
-            metric_name="log_score",
-        )
+    promotion = promote_archive(
+        tmp_path / "frontier.json",
+        archive,
+        score=999.0,
+        metric_name="log_score",
+    )
+
+    assert promotion.accepted is False
+    assert not (tmp_path / "frontier.json").exists()
 
 
 def test_frontier_store_rejects_score_mismatched_with_metrics(tmp_path: Path) -> None:
     store = FrontierStore(tmp_path / "frontier.json")
 
     with pytest.raises(ValueError, match="does not match metrics"):
-        store.promote(
+        store._promote_verified(
             dataset_hash="hash-1",
             split_mode="chronological",
             strategy_kind="legacy_mispriced",
@@ -466,7 +485,7 @@ def test_frontier_store_rejects_score_mismatched_with_metrics(tmp_path: Path) ->
 
 def test_frontier_rejects_incomparable_metric_direction(tmp_path: Path) -> None:
     store = FrontierStore(tmp_path / "frontier.json")
-    store.promote(
+    store._promote_verified(
         dataset_hash="hash-1",
         split_mode="chronological",
         strategy_kind="legacy_mispriced",
@@ -475,7 +494,7 @@ def test_frontier_rejects_incomparable_metric_direction(tmp_path: Path) -> None:
     )
 
     with pytest.raises(ValueError, match="different metric_name"):
-        store.promote(
+        store._promote_verified(
             dataset_hash="hash-1",
             split_mode="chronological",
             strategy_kind="legacy_mispriced",

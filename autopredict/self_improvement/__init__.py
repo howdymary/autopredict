@@ -4,6 +4,7 @@ from autopredict.self_improvement.archive import (
     build_run_archive,
     dataset_sha256,
     load_run_archive,
+    rebuild_promotion_attempt,
     write_run_archive,
 )
 from autopredict.self_improvement.frontier import (
@@ -35,6 +36,14 @@ from autopredict.self_improvement.ratchet import (
     run_forecast_owned_ratchet,
     run_market_recalibration_ratchet,
 )
+from autopredict.self_improvement.promotion import (
+    PROMOTION_METHOD_VERSION,
+    PairedForecastRow,
+    PromotionDecision,
+    PromotionPolicy,
+    assess_paired_forecasts,
+    parse_paired_rows,
+)
 from autopredict.self_improvement.selection import (
     CandidateEvaluation,
     SelectionConfig,
@@ -58,8 +67,15 @@ __all__ = [
     "ImprovementLoopConfig",
     "improvement_config_with_population",
     "load_run_archive",
+    "rebuild_promotion_attempt",
     "MutationConfig",
+    "PROMOTION_METHOD_VERSION",
+    "PairedForecastRow",
+    "PromotionDecision",
+    "PromotionPolicy",
     "promote_archive",
+    "assess_paired_forecasts",
+    "parse_paired_rows",
     "run_forecast_owned_ratchet",
     "SelectionConfig",
     "SelectionOutcome",

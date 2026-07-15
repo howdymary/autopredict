@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass, field
 from typing import Any, Sequence
 
@@ -78,9 +79,7 @@ class SelectionConfig:
         if self.max_calibration_gap_regression < 0:
             raise ValueError("max_calibration_gap_regression must be non-negative")
         if self.max_held_out_calibration_stability_regression < 0:
-            raise ValueError(
-                "max_held_out_calibration_stability_regression must be non-negative"
-            )
+            raise ValueError("max_held_out_calibration_stability_regression must be non-negative")
 
 
 @dataclass(frozen=True)
@@ -150,6 +149,26 @@ class StrategySelector:
         baseline: CandidateEvaluation,
     ) -> list[str]:
         reasons: list[str] = []
+        if not candidate.result.forecasts:
+            reasons.append("empty_forecast_evidence")
+        if candidate is not baseline and _forecast_pairing(candidate) != _forecast_pairing(
+            baseline
+        ):
+            reasons.append("paired_forecast_rows_mismatch")
+        scoring = candidate.result.scoring
+        if scoring.count != len(candidate.result.forecasts):
+            reasons.append("scoring_count_mismatch")
+        if not all(
+            math.isfinite(float(value))
+            for value in (
+                scoring.brier_score,
+                scoring.log_score,
+                scoring.log_loss,
+                scoring.spherical_score,
+                scoring.calibration.mean_absolute_gap,
+            )
+        ):
+            reasons.append("nonfinite_scoring_evidence")
         if candidate.result.metrics["num_filled_trades"] < self.config.min_filled_trades:
             reasons.append("insufficient_filled_trades")
         if (
@@ -169,8 +188,22 @@ class StrategySelector:
             baseline_stability is not None
             and candidate_stability is not None
             and candidate_stability
-            > baseline_stability
-            + self.config.max_held_out_calibration_stability_regression
+            > baseline_stability + self.config.max_held_out_calibration_stability_regression
         ):
             reasons.append("held_out_calibration_stability_regression")
         return reasons
+
+
+def _forecast_pairing(candidate: CandidateEvaluation) -> tuple[tuple[str, str, int], ...]:
+    """Return the exact market/event/outcome rows used for paired selection."""
+
+    return tuple(
+        sorted(
+            (
+                forecast.market_id,
+                str(forecast.metadata.get("event_id", forecast.market_id)),
+                forecast.outcome,
+            )
+            for forecast in candidate.result.forecasts
+        )
+    )

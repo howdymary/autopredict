@@ -10,13 +10,6 @@ from autopredict.recording.contracts import (
     load_capture,
     write_capture,
 )
-from autopredict.recording.recorder import (
-    PolymarketCaptureSource,
-    PolymarketRecorder,
-    PublicJSONTransport,
-    ReadOnlyPolymarketSource,
-    RequestsPublicJSONTransport,
-)
 from autopredict.recording.replay import replay_capture
 
 __all__ = [
@@ -35,3 +28,20 @@ __all__ = [
     "replay_capture",
     "write_capture",
 ]
+
+
+def __getattr__(name: str):
+    """Load HTTP recorder implementations only when explicitly requested."""
+
+    recorder_names = {
+        "PolymarketCaptureSource",
+        "PolymarketRecorder",
+        "PublicJSONTransport",
+        "ReadOnlyPolymarketSource",
+        "RequestsPublicJSONTransport",
+    }
+    if name in recorder_names:
+        from autopredict.recording import recorder
+
+        return getattr(recorder, name)
+    raise AttributeError(name)

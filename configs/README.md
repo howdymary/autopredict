@@ -4,7 +4,8 @@ This directory contains configuration files for AutoPredict trading experiments.
 
 ## Files
 
-- `paper_trading.yaml` - Safe paper trading configuration (no real money)
+- `shadow_replay.yaml.example` - Durable credential-free shadow replay configuration
+- `paper_trading.yaml` - Legacy experiment config retained for offline tests
 - `live_trading.yaml.example` - Inactive reference config retained for safety-audit tests
 
 ## Usage
@@ -14,8 +15,9 @@ This directory contains configuration files for AutoPredict trading experiments.
 Paper trading is completely safe - it simulates trading without risking real capital.
 
 ```bash
-# Run paper trading
-autopredict-paper --config configs/paper_trading.yaml
+# Run credential-free shadow execution
+cp configs/shadow_replay.yaml.example configs/my_shadow.yaml
+autopredict shadow run --config configs/my_shadow.yaml
 ```
 
 You can freely experiment with paper trading configurations.

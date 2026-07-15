@@ -12,6 +12,7 @@ from .schema import (
     LoggingConfig,
 )
 from .loader import load_config, validate_config, save_config
+from .shadow import SHADOW_CONFIG_VERSION, ShadowConfig, load_shadow_config
 
 __all__ = [
     "StrategyConfig",
@@ -23,4 +24,7 @@ __all__ = [
     "load_config",
     "validate_config",
     "save_config",
+    "SHADOW_CONFIG_VERSION",
+    "ShadowConfig",
+    "load_shadow_config",
 ]

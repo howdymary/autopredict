@@ -8,7 +8,6 @@ import pytest
 
 from autopredict.evaluation import evaluate_market_baseline, load_dataset_v1, report_json
 
-
 FIXTURE = Path(__file__).parent / "fixtures/datasets/resolved-v1/manifest.json"
 
 

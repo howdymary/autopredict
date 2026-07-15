@@ -11,7 +11,6 @@ from autopredict.core.types import MarketCategory, MarketState
 from autopredict.evaluation.backtest import ResolvedMarketSnapshot
 from autopredict.prediction_market.types import VenueConfig, VenueName
 
-
 _DOMAIN_BY_CATEGORY = {
     "politics": "politics",
     "geopolitics": "politics",

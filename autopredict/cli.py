@@ -27,7 +27,6 @@ from .self_improvement import (
     write_run_archive,
 )
 
-
 PACKAGE_ROOT = Path(__file__).resolve().parent
 REPO_ROOT = PACKAGE_ROOT.parent
 BUNDLED_DEFAULT_ROOT = PACKAGE_ROOT / "_defaults"

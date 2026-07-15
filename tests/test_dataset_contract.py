@@ -11,7 +11,6 @@ import pytest
 
 from autopredict.evaluation import DatasetValidationError, load_dataset_v1
 
-
 FIXTURE = Path(__file__).parent / "fixtures/datasets/resolved-v1/manifest.json"
 
 
